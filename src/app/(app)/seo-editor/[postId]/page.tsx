@@ -114,7 +114,11 @@ export default function SeoEditorPostPage() {
   async function analyzeSeo() {
     setAnalyzing(true);
     try {
-      const res = await fetch(`/api/wp-posts/${postId}/seo-score`, { method: "POST" });
+      const res = await fetch(`/api/wp-posts/${postId}/seo-score`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keywords: keywords.length > 0 ? keywords : undefined }),
+      });
       if (res.ok) {
         const data = await res.json();
         setPost((prev) => prev ? { ...prev, seo_score: data.score } : prev);

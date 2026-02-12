@@ -8,8 +8,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ pos
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await request.json();
-  const { keywords } = body;
+  let keywords: string[] | undefined;
+  try {
+    const body = await request.json();
+    keywords = body.keywords;
+  } catch {
+    // No body sent — that's fine, keywords are optional
+  }
 
   const { data: post } = await supabase
     .from("asc_wp_posts")

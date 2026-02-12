@@ -33,10 +33,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ pos
     await updatePost(creds, post.wp_post_id, { content: result.htmlContent, excerpt: result.metaDescription });
   }
 
-  await supabase.from("asc_wp_posts").update({
+  const { data: updated } = await supabase.from("asc_wp_posts").update({
     content: result.htmlContent,
     meta_description: result.metaDescription,
-  }).eq("id", postId);
+  }).eq("id", postId).select().single();
 
-  return NextResponse.json({ htmlContent: result.htmlContent, metaDescription: result.metaDescription });
+  return NextResponse.json({ post: updated });
 }

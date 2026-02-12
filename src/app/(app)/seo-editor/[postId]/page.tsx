@@ -102,8 +102,11 @@ export default function SeoEditorPostPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setPost(data.post);
-        setContent(data.post.content ?? "");
+        if (data.post) {
+          setPost(data.post);
+          setContent(data.post.content ?? "");
+          setMetaDescription(data.post.meta_description ?? "");
+        }
         setRewritePrompt("");
       }
     } finally {

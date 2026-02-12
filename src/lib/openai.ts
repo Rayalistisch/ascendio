@@ -357,7 +357,22 @@ export async function rewriteContentWithPrompt(
     messages: [
       {
         role: "system",
-        content: `You are an expert content editor. Rewrite the provided HTML content according to the user's instructions. Maintain proper HTML structure (h2, h3, p, ul, table, blockquote). ${keywords?.length ? `Optimize for keywords: ${keywords.join(", ")}` : ""} Return ONLY a JSON object with: { "htmlContent": "...", "metaDescription": "..." }`,
+        content: `You are an expert SEO content editor. Rewrite the provided HTML content according to the user's instructions.
+
+## OUTPUT FORMAT REQUIREMENTS:
+- Use proper HTML tags: <h2>, <h3> for headings (NO <h1>), <p> for paragraphs, <ul>/<ol>/<li> for lists
+- Every section must have a clear <h2> heading
+- Use <h3> for subsections within each <h2> block
+- Include 4-6 main sections (h2) for proper structure
+- Every paragraph must be wrapped in <p> tags
+- Include bullet lists (<ul>/<li>) where appropriate
+- Use <strong> and <em> for emphasis on key terms
+- Use <blockquote> for key takeaways
+- Include a FAQ section at the end with <h2> and <h3> question/answer pairs
+- Content should be 1200-2000 words
+${keywords?.length ? `- Optimize for these keywords: ${keywords.join(", ")}. Use the primary keyword in the first paragraph and naturally throughout.` : ""}
+
+Return ONLY a JSON object with: { "htmlContent": "...", "metaDescription": "150-160 character meta description" }`,
       },
       {
         role: "user",

@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { enqueueGenerateJob, enqueueSourceFetchJob } from "@/lib/qstash";
+import { verifyQStashSignature } from "@/lib/qstash";
 import { getNextRunDate } from "@/lib/scheduler";
 
-// Vercel Cron or external cron hits this every 15 minutes
-// Header: Authorization: Bearer <CRON_SECRET>
+// Called by QStash schedule (POST) or Vercel cron / manual (GET)
+export async function POST(request: Request) {
+  const rawBody = await request.text();
+  const sig = request.headers.get("upstash-signature");
+  if (!(await verifyQStashSignature(sig, rawBody))) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+  return runCron();
+}
+
 export async function GET(request: Request) {
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
@@ -12,6 +21,10 @@ export async function GET(request: Request) {
   if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  return runCron();
+}
+
+async function runCron() {
 
   const supabase = createAdminClient();
   const now = new Date().toISOString();

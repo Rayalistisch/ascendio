@@ -23,11 +23,32 @@ interface Site {
   name: string;
 }
 
+// All available section types for SEO/GEO optimized content
+const SECTION_TYPES = {
+  h2: { label: "H2 Heading", badge: "H2", color: "secondary" as const },
+  h3: { label: "H3 Subheading", badge: "H3", color: "outline" as const },
+  paragraph: { label: "Paragraaf", badge: "P", color: "outline" as const },
+  bullets: { label: "Bullet lijst", badge: "UL", color: "outline" as const },
+  numbered: { label: "Genummerde lijst", badge: "OL", color: "outline" as const },
+  faq: { label: "FAQ Sectie", badge: "FAQ", color: "secondary" as const },
+  table: { label: "Vergelijkingstabel", badge: "TABLE", color: "outline" as const },
+  top5: { label: "Top 5 Lijst", badge: "TOP 5", color: "secondary" as const },
+  top10: { label: "Top 10 Lijst", badge: "TOP 10", color: "secondary" as const },
+  blockquote: { label: "Key Takeaway", badge: "QUOTE", color: "outline" as const },
+  stats: { label: "Statistieken / Data", badge: "STATS", color: "outline" as const },
+  pros_cons: { label: "Voordelen / Nadelen", badge: "PRO/CON", color: "secondary" as const },
+  cta: { label: "Call-to-Action", badge: "CTA", color: "outline" as const },
+  tldr: { label: "TL;DR Samenvatting", badge: "TL;DR", color: "secondary" as const },
+  image: { label: "Afbeelding placeholder", badge: "IMG", color: "outline" as const },
+  video: { label: "Video embed", badge: "VIDEO", color: "outline" as const },
+} as const;
+
+type SectionType = keyof typeof SECTION_TYPES;
+
 interface TemplateSection {
-  type: "h2";
+  type: SectionType;
   label: string;
   instruction: string;
-  children: { type: "h3"; label: string; instruction: string }[];
 }
 
 interface ArticleTemplate {
@@ -40,9 +61,74 @@ interface ArticleTemplate {
   created_at: string;
 }
 
-function createEmptySection(): TemplateSection {
-  return { type: "h2", label: "", instruction: "", children: [] };
+function createEmptySection(type: SectionType = "h2"): TemplateSection {
+  const defaults: Partial<Record<SectionType, string>> = {
+    h2: "",
+    h3: "",
+    paragraph: "Schrijf een uitgebreide paragraaf over dit onderwerp.",
+    bullets: "Geef een opsomming met de belangrijkste punten.",
+    numbered: "Geef een genummerde stapsgewijze uitleg.",
+    faq: "Schrijf 3-5 veelgestelde vragen met beknopte antwoorden.",
+    table: "Maak een vergelijkingstabel met de belangrijkste kenmerken.",
+    top5: "Schrijf een top 5 lijst met uitleg per item.",
+    top10: "Schrijf een top 10 lijst met uitleg per item.",
+    blockquote: "Geef een key takeaway of expert quote.",
+    stats: "Voeg relevante statistieken en data toe met bronvermelding.",
+    pros_cons: "Geef een overzicht van voordelen en nadelen.",
+    cta: "Schrijf een overtuigende call-to-action.",
+    tldr: "Geef een beknopte samenvatting (TL;DR) van het artikel.",
+    image: "Voeg hier een relevante afbeelding toe.",
+    video: "Embed hier een relevante YouTube video.",
+  };
+  return { type, label: "", instruction: defaults[type] ?? "" };
 }
+
+// Preset templates for quick start
+const PRESETS: { name: string; sections: TemplateSection[] }[] = [
+  {
+    name: "SEO Blog (2026 Best Practice)",
+    sections: [
+      { type: "tldr", label: "TL;DR", instruction: "Korte samenvatting van het artikel in 2-3 zinnen. Google gebruikt dit voor featured snippets." },
+      { type: "h2", label: "Introductie", instruction: "Pakkende opening die het probleem schetst. Gebruik het hoofdzoekwoord in de eerste zin." },
+      { type: "h2", label: "Wat is [onderwerp]?", instruction: "Duidelijke definitie en context. Geschikt voor featured snippet / AI overview." },
+      { type: "h2", label: "Hoe werkt het?", instruction: "Gedetailleerde uitleg met stappen." },
+      { type: "numbered", label: "Stappen", instruction: "Stapsgewijze handleiding." },
+      { type: "h2", label: "Voordelen & Nadelen", instruction: "Objectieve analyse." },
+      { type: "pros_cons", label: "Pro/Con overzicht", instruction: "Maak een duidelijke voordelen/nadelen lijst." },
+      { type: "h2", label: "Tips & Best Practices", instruction: "Praktische tips voor de lezer." },
+      { type: "bullets", label: "Tips lijst", instruction: "5-7 concrete tips." },
+      { type: "table", label: "Vergelijking", instruction: "Vergelijkingstabel met alternatieven of opties." },
+      { type: "faq", label: "Veelgestelde Vragen", instruction: "5 FAQ items met FAQ schema markup." },
+      { type: "h2", label: "Conclusie", instruction: "Samenvatting en aanbeveling." },
+      { type: "cta", label: "Call-to-Action", instruction: "Duidelijke volgende stap voor de lezer." },
+    ],
+  },
+  {
+    name: "Top 10 Listicle",
+    sections: [
+      { type: "h2", label: "Introductie", instruction: "Korte intro die uitlegt waarom deze top 10 relevant is." },
+      { type: "top10", label: "De Top 10", instruction: "Uitgebreide top 10 lijst met per item een H3, beschrijving, voordelen en score." },
+      { type: "table", label: "Overzichtstabel", instruction: "Samenvattende tabel met alle 10 items en hun scores." },
+      { type: "faq", label: "Veelgestelde Vragen", instruction: "3-5 FAQ items over het onderwerp." },
+      { type: "h2", label: "Conclusie", instruction: "Welke is de beste keuze en voor wie?" },
+    ],
+  },
+  {
+    name: "GEO-Optimized (AI Overview proof)",
+    sections: [
+      { type: "tldr", label: "Kernantwoord", instruction: "Direct antwoord op de zoekvraag in 1-2 zinnen. Dit wordt gebruikt voor AI Overviews." },
+      { type: "h2", label: "Snel Overzicht", instruction: "Beknopt overzicht met de belangrijkste feiten." },
+      { type: "stats", label: "Cijfers & Data", instruction: "Relevante statistieken met bronvermelding. AI systemen citeren data." },
+      { type: "h2", label: "Diepgaande Analyse", instruction: "Uitgebreide expert analyse met unieke inzichten." },
+      { type: "h2", label: "Praktische Toepassing", instruction: "Concrete stappen die de lezer kan ondernemen." },
+      { type: "numbered", label: "Stappenplan", instruction: "Stapsgewijze instructies." },
+      { type: "blockquote", label: "Expert Inzicht", instruction: "Expert quote of uniek inzicht dat autoriteit toont." },
+      { type: "pros_cons", label: "Afweging", instruction: "Objectieve voordelen/nadelen analyse." },
+      { type: "faq", label: "Gerelateerde Vragen", instruction: "People Also Ask vragen met uitgebreide antwoorden." },
+      { type: "h2", label: "Conclusie", instruction: "Samenvattend antwoord met duidelijke aanbeveling." },
+    ],
+  },
+];
 
 export default function TemplatesPage() {
   const [sites, setSites] = useState<Site[]>([]);
@@ -94,6 +180,11 @@ export default function TemplatesPage() {
     setDialogOpen(true);
   }
 
+  function loadPreset(preset: typeof PRESETS[number]) {
+    setName(preset.name);
+    setSections([...preset.sections]);
+  }
+
   function openEditDialog(template: ArticleTemplate) {
     setEditingId(template.id);
     setName(template.name);
@@ -106,12 +197,7 @@ export default function TemplatesPage() {
   async function saveTemplate() {
     setSaving(true);
     try {
-      const filteredSections = sections
-        .filter((s) => s.label.trim())
-        .map((s) => ({
-          ...s,
-          children: s.children.filter((c) => c.label.trim()),
-        }));
+      const filteredSections = sections.filter((s) => s.label.trim() || s.instruction.trim());
 
       const method = editingId ? "PATCH" : "POST";
       const body = editingId
@@ -143,7 +229,7 @@ export default function TemplatesPage() {
   }
 
   // Section management
-  function updateSection(index: number, field: keyof TemplateSection, value: string) {
+  function updateSection(index: number, field: "label" | "instruction" | "type", value: string) {
     setSections((prev) => prev.map((s, i) => (i === index ? { ...s, [field]: value } : s)));
   }
 
@@ -161,40 +247,11 @@ export default function TemplatesPage() {
     setSections((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function addChild(sectionIndex: number) {
-    setSections((prev) =>
-      prev.map((s, i) =>
-        i === sectionIndex
-          ? { ...s, children: [...s.children, { type: "h3" as const, label: "", instruction: "" }] }
-          : s
-      )
-    );
+  function addSection(type: SectionType) {
+    setSections((prev) => [...prev, createEmptySection(type)]);
   }
 
-  function updateChild(sectionIndex: number, childIndex: number, field: "label" | "instruction", value: string) {
-    setSections((prev) =>
-      prev.map((s, i) =>
-        i === sectionIndex
-          ? {
-              ...s,
-              children: s.children.map((c, ci) =>
-                ci === childIndex ? { ...c, [field]: value } : c
-              ),
-            }
-          : s
-      )
-    );
-  }
-
-  function removeChild(sectionIndex: number, childIndex: number) {
-    setSections((prev) =>
-      prev.map((s, i) =>
-        i === sectionIndex
-          ? { ...s, children: s.children.filter((_, ci) => ci !== childIndex) }
-          : s
-      )
-    );
-  }
+  const sectionTypeMeta = SECTION_TYPES;
 
   return (
     <div className="space-y-6">
@@ -202,7 +259,7 @@ export default function TemplatesPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Artikelstructuur</h1>
           <p className="text-muted-foreground mt-1">
-            Definieer H2/H3 templates voor artikelgeneratie.
+            Definieer content templates met SEO/GEO best practices.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -225,6 +282,20 @@ export default function TemplatesPage() {
                 <DialogTitle>{editingId ? "Template bewerken" : "Nieuw template"}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 pt-2">
+                {/* Presets */}
+                {!editingId && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold text-muted-foreground">Snel starten met preset</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {PRESETS.map((preset) => (
+                        <Button key={preset.name} variant="outline" size="sm" onClick={() => loadPreset(preset)}>
+                          {preset.name}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Naam</Label>
@@ -243,75 +314,66 @@ export default function TemplatesPage() {
 
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold">Secties</Label>
-                  <div className="space-y-3">
-                    {sections.map((section, si) => (
-                      <div key={si} className="rounded-lg border bg-muted/30 p-3 space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary" className="shrink-0">H2</Badge>
-                          <Input
-                            value={section.label}
-                            onChange={(e) => updateSection(si, "label", e.target.value)}
-                            placeholder="Sectie titel (bijv. Introductie)"
-                            className="flex-1"
-                          />
-                          <div className="flex items-center gap-1 shrink-0">
-                            <Button variant="ghost" size="sm" onClick={() => moveSection(si, -1)} disabled={si === 0}>
-                              <ChevronUp className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={() => moveSection(si, 1)} disabled={si === sections.length - 1}>
-                              <ChevronDown className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={() => removeSection(si)} className="text-destructive">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                        <Textarea
-                          value={section.instruction}
-                          onChange={(e) => updateSection(si, "instruction", e.target.value)}
-                          placeholder="Instructie voor AI (bijv. Schrijf een pakkende introductie die de lezer aanspreekt...)"
-                          rows={2}
-                          className="text-sm"
-                        />
-
-                        {/* H3 children */}
-                        {section.children.map((child, ci) => (
-                          <div key={ci} className="ml-6 flex items-start gap-2">
-                            <Badge variant="outline" className="shrink-0 mt-2">H3</Badge>
-                            <div className="flex-1 space-y-1">
-                              <Input
-                                value={child.label}
-                                onChange={(e) => updateChild(si, ci, "label", e.target.value)}
-                                placeholder="Subsectie titel"
-                              />
-                              <Textarea
-                                value={child.instruction}
-                                onChange={(e) => updateChild(si, ci, "instruction", e.target.value)}
-                                placeholder="Instructie voor subsectie..."
-                                rows={1}
-                                className="text-sm"
-                              />
+                  <div className="space-y-2">
+                    {sections.map((section, si) => {
+                      const meta = sectionTypeMeta[section.type] || sectionTypeMeta.paragraph;
+                      return (
+                        <div key={si} className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <NativeSelect
+                              value={section.type}
+                              onChange={(e) => updateSection(si, "type", e.target.value)}
+                              className="w-40 text-xs"
+                            >
+                              {Object.entries(SECTION_TYPES).map(([key, val]) => (
+                                <option key={key} value={key}>{val.label}</option>
+                              ))}
+                            </NativeSelect>
+                            <Badge variant={meta.color} className="shrink-0 text-xs">{meta.badge}</Badge>
+                            <Input
+                              value={section.label}
+                              onChange={(e) => updateSection(si, "label", e.target.value)}
+                              placeholder="Sectie label (optioneel)"
+                              className="flex-1"
+                            />
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <Button variant="ghost" size="sm" onClick={() => moveSection(si, -1)} disabled={si === 0}>
+                                <ChevronUp className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => moveSection(si, 1)} disabled={si === sections.length - 1}>
+                                <ChevronDown className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => removeSection(si)} className="text-destructive">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
                             </div>
-                            <Button variant="ghost" size="sm" onClick={() => removeChild(si, ci)} className="text-destructive mt-2">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
                           </div>
-                        ))}
+                          <Textarea
+                            value={section.instruction}
+                            onChange={(e) => updateSection(si, "instruction", e.target.value)}
+                            placeholder="Instructie voor AI..."
+                            rows={2}
+                            className="text-sm"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
 
-                        <Button variant="ghost" size="sm" onClick={() => addChild(si)} className="ml-6 text-xs">
-                          <Plus className="h-3 w-3 mr-1" /> H3 subsectie
-                        </Button>
-                      </div>
+                  {/* Add section buttons */}
+                  <div className="flex flex-wrap gap-1.5">
+                    {(["h2", "h3", "paragraph", "bullets", "faq", "table", "top5", "top10", "pros_cons", "stats", "blockquote", "tldr", "cta", "image", "video", "numbered"] as SectionType[]).map((type) => (
+                      <Button
+                        key={type}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => addSection(type)}
+                        className="text-xs"
+                      >
+                        <Plus className="h-3 w-3 mr-1" /> {SECTION_TYPES[type].badge}
+                      </Button>
                     ))}
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSections((prev) => [...prev, createEmptySection()])}
-                    className="w-full"
-                  >
-                    <Plus className="h-4 w-4 mr-1" /> H2 sectie toevoegen
-                  </Button>
                 </div>
 
                 <Button onClick={saveTemplate} disabled={saving || !name.trim()} className="w-full">
@@ -347,9 +409,14 @@ export default function TemplatesPage() {
                     <p className="text-xs text-muted-foreground mt-0.5">{template.description}</p>
                   )}
                   <div className="flex items-center gap-1 mt-1 flex-wrap">
-                    {template.structure.map((s, i) => (
-                      <Badge key={i} variant="outline" className="text-xs">{s.label || `Sectie ${i + 1}`}</Badge>
-                    ))}
+                    {template.structure.map((s, i) => {
+                      const meta = SECTION_TYPES[s.type as SectionType] || SECTION_TYPES.paragraph;
+                      return (
+                        <Badge key={i} variant={meta.color} className="text-xs">
+                          {meta.badge}{s.label ? `: ${s.label}` : ""}
+                        </Badge>
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

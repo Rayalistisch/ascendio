@@ -16,9 +16,9 @@ interface ScanReport {
   id: string;
   site_id: string;
   status: string;
-  total_pages: number | null;
-  total_issues: number | null;
-  fixed_issues: number | null;
+  pages_scanned: number | null;
+  issues_found: number | null;
+  issues_fixed: number | null;
   created_at: string;
   finished_at: string | null;
 }
@@ -138,17 +138,17 @@ export default function ScannerPage() {
                     <td className="px-4 py-3">
                       <Badge variant={status.variant}>{status.label}</Badge>
                     </td>
-                    <td className="px-4 py-3">{report.total_pages ?? "—"}</td>
+                    <td className="px-4 py-3">{report.pages_scanned ?? "—"}</td>
                     <td className="px-4 py-3">
-                      {report.total_issues !== null ? (
-                        <span className={report.total_issues > 0 ? "text-red-600 font-medium" : "text-green-600"}>
-                          {report.total_issues}
+                      {report.issues_found !== null ? (
+                        <span className={report.issues_found > 0 ? "text-red-600 font-medium" : "text-green-600"}>
+                          {report.issues_found}
                         </span>
                       ) : "—"}
                     </td>
                     <td className="px-4 py-3">
-                      {report.fixed_issues !== null ? (
-                        <span className="text-green-600">{report.fixed_issues}</span>
+                      {report.issues_fixed !== null ? (
+                        <span className="text-green-600">{report.issues_fixed}</span>
                       ) : "—"}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">

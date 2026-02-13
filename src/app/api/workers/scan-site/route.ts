@@ -43,8 +43,8 @@ export async function POST(request: Request) {
 
     await supabase.from("asc_scan_reports").update({
       status: "completed",
-      total_pages: result.pagesScanned,
-      total_issues: result.issues.length,
+      pages_scanned: result.pagesScanned,
+      issues_found: result.issues.length,
       finished_at: new Date().toISOString(),
     }).eq("id", reportId);
 

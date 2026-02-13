@@ -101,10 +101,9 @@ export interface TocEntry {
 }
 
 export interface StructureTemplateSection {
-  type: "h2";
+  type: "h2" | "h3" | "paragraph" | "bullets" | "numbered" | "faq" | "table" | "top5" | "top10" | "blockquote" | "stats" | "pros_cons" | "cta" | "tldr" | "image" | "video";
   label: string;
   instruction: string;
-  children?: { type: "h3"; label: string; instruction: string }[];
 }
 
 export interface ClusterContext {
@@ -237,14 +236,20 @@ export async function generateEnhancedArticle(
   // Build structure template instruction
   let structureInstruction = "";
   if (req.structureTemplate?.sections?.length) {
+    const typeLabels: Record<string, string> = {
+      h2: "H2 heading", h3: "H3 subheading", paragraph: "Paragraaf (<p>)",
+      bullets: "Bullet list (<ul>/<li>)", numbered: "Genummerde lijst (<ol>/<li>)",
+      faq: "FAQ sectie (<h3>vraag</h3><p>antwoord</p>)", table: "Tabel (<table>)",
+      top5: "Top 5 lijst", top10: "Top 10 lijst", blockquote: "Blockquote (<blockquote>)",
+      stats: "Statistieken/cijfers blok", pros_cons: "Voordelen & Nadelen",
+      cta: "Call-to-action blok", tldr: "TL;DR samenvatting",
+      image: "Afbeelding placeholder (<!-- IMAGE:... -->)", video: "Video placeholder (<!-- YOUTUBE:... -->)",
+    };
     const sectionLines = req.structureTemplate.sections.map((s, i) => {
-      let line = `\n### Sectie ${i + 1}: ${s.label} (H2)\nInstructie: ${s.instruction}`;
-      if (s.children?.length) {
-        line += s.children.map((c, ci) => `\n#### Subsectie ${i + 1}.${ci + 1}: ${c.label} (H3)\nInstructie: ${c.instruction}`).join("");
-      }
-      return line;
-    }).join("\n");
-    structureInstruction = `\n## ARTIKELSTRUCTUUR (VERPLICHT):\nVolg exact deze structuur:${sectionLines}\n`;
+      const tag = typeLabels[s.type] || s.type;
+      return `\n${i + 1}. **${s.label}** — Type: ${tag}\n   Instructie: ${s.instruction}`;
+    }).join("");
+    structureInstruction = `\n## ARTIKELSTRUCTUUR (VERPLICHT):\nVolg exact deze structuur en volgorde:${sectionLines}\n`;
   }
 
   // Build preferred domains instruction

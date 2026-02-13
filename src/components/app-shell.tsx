@@ -13,6 +13,8 @@ import {
   ScanSearch,
   Share2,
   Search,
+  Network,
+  FileText,
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,6 +26,8 @@ const navigation = [
   { name: "Schema's", href: "/schedule", icon: CalendarClock },
   { name: "Runs", href: "/runs", icon: History },
   { name: "Bronnen", href: "/sources", icon: Rss },
+  { name: "Clusters", href: "/clusters", icon: Network },
+  { name: "Templates", href: "/templates", icon: FileText },
   { name: "SEO Editor", href: "/seo-editor", icon: PenTool },
   { name: "Scanner", href: "/scanner", icon: ScanSearch },
   { name: "Social Media", href: "/social", icon: Share2 },

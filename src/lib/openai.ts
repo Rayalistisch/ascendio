@@ -100,6 +100,21 @@ export interface TocEntry {
   id: string;
 }
 
+export interface StructureTemplateSection {
+  type: "h2";
+  label: string;
+  instruction: string;
+  children?: { type: "h3"; label: string; instruction: string }[];
+}
+
+export interface ClusterContext {
+  pillarTopic: string;
+  pillarUrl?: string;
+  pillarSlug?: string;
+  siblingArticles: { slug: string; title: string; url?: string }[];
+  isPillarArticle: boolean;
+}
+
 export interface EnhancedArticleRequest {
   niche: string;
   language?: string;
@@ -108,6 +123,11 @@ export interface EnhancedArticleRequest {
   existingPosts?: { slug: string; title: string }[];
   siteBaseUrl?: string;
   targetKeywords?: string[];
+  structureTemplate?: { sections: StructureTemplateSection[] };
+  clusterContext?: ClusterContext;
+  preferredDomains?: { domain: string; label?: string }[];
+  forcedTopic?: string;
+  forcedTitle?: string;
 }
 
 export interface EnhancedArticle {
@@ -138,42 +158,103 @@ export async function generateEnhancedArticle(
   const client = getClient();
   const language = req.language || "Dutch";
 
-  // Stage 1: Topic generation
-  const topicPrompt = req.sourceContent
-    ? `Based on this source content, generate a unique blog topic:\n\nSource: "${req.sourceTitle || ""}"\n${req.sourceContent.substring(0, 2000)}\n\nGenerate a fresh angle for the niche "${req.niche}" in ${language}.`
-    : `Generate a fresh blog topic for the niche "${req.niche}" in ${language}. The topic should be specific, actionable, and search-friendly.`;
+  // Stage 1: Topic generation (skip if forced from cluster)
+  let topic: string;
+  let title: string;
+  let keywords: string[];
 
-  const topicResponse = await client.chat.completions.create({
-    model: "gpt-4o",
-    temperature: 0.8,
-    messages: [
-      {
-        role: "system",
-        content: `You are a professional blog strategist. Respond in ${language}. Return ONLY a JSON object with: { "topic": "...", "title": "...", "targetKeywords": ["keyword1", "keyword2", "keyword3"] }`,
-      },
-      { role: "user", content: topicPrompt },
-    ],
-    response_format: { type: "json_object" },
-  });
+  if (req.forcedTopic && req.forcedTitle) {
+    topic = req.forcedTopic;
+    title = req.forcedTitle;
+    keywords = req.targetKeywords || [];
+  } else {
+    const topicPrompt = req.sourceContent
+      ? `Based on this source content, generate a unique blog topic:\n\nSource: "${req.sourceTitle || ""}"\n${req.sourceContent.substring(0, 2000)}\n\nGenerate a fresh angle for the niche "${req.niche}" in ${language}.`
+      : req.forcedTopic
+        ? `Generate a compelling blog title for this topic: "${req.forcedTopic}" in the niche "${req.niche}" in ${language}.`
+        : `Generate a fresh blog topic for the niche "${req.niche}" in ${language}. The topic should be specific, actionable, and search-friendly.`;
 
-  const topicData = JSON.parse(
-    topicResponse.choices[0].message.content || "{}"
-  );
-  const { topic, title } = topicData;
-  const keywords = req.targetKeywords?.length
-    ? req.targetKeywords
-    : topicData.targetKeywords || [];
+    const topicResponse = await client.chat.completions.create({
+      model: "gpt-4o",
+      temperature: 0.8,
+      messages: [
+        {
+          role: "system",
+          content: `You are a professional blog strategist. Respond in ${language}. Return ONLY a JSON object with: { "topic": "...", "title": "...", "targetKeywords": ["keyword1", "keyword2", "keyword3"] }`,
+        },
+        { role: "user", content: topicPrompt },
+      ],
+      response_format: { type: "json_object" },
+    });
 
-  // Build internal links instruction
-  const internalLinksInstruction = req.existingPosts?.length
-    ? `\n## INTERNAL LINKS:\nWhere naturally relevant, link to these existing articles:\n${req.existingPosts
-        .slice(0, 15)
-        .map(
-          (p) =>
-            `- <a href="${req.siteBaseUrl || ""}/${p.slug}">${p.title}</a>`
-        )
-        .join("\n")}\nUse 2-4 internal links where they genuinely add value.`
-    : "";
+    const topicData = JSON.parse(
+      topicResponse.choices[0].message.content || "{}"
+    );
+    topic = req.forcedTopic || topicData.topic;
+    title = topicData.title;
+    keywords = req.targetKeywords?.length
+      ? req.targetKeywords
+      : topicData.targetKeywords || [];
+  }
+
+  // Build internal links instruction (cluster-aware)
+  let internalLinksInstruction = "";
+  if (req.clusterContext) {
+    const ctx = req.clusterContext;
+    if (ctx.isPillarArticle) {
+      const siblingLinks = ctx.siblingArticles
+        .map((a) => `- <a href="${a.url || `${req.siteBaseUrl || ""}/${a.slug}`}">${a.title}</a>`)
+        .join("\n");
+      internalLinksInstruction = siblingLinks
+        ? `\n## CLUSTER INTERNAL LINKS (VERPLICHT):\nDit is het PILLAR artikel over "${ctx.pillarTopic}". Link naar AL deze supporting artikelen:\n${siblingLinks}`
+        : "";
+    } else {
+      const pillarLink = ctx.pillarUrl
+        ? `\nLink TERUG naar het pillar artikel:\n- <a href="${ctx.pillarUrl}">${ctx.pillarTopic}</a>`
+        : "";
+      const siblingLinks = ctx.siblingArticles
+        .map((a) => `- <a href="${a.url || `${req.siteBaseUrl || ""}/${a.slug}`}">${a.title}</a>`)
+        .join("\n");
+      internalLinksInstruction = `\n## CLUSTER INTERNAL LINKS (HOGE PRIORITEIT):\nDit artikel hoort bij het topic cluster "${ctx.pillarTopic}".${pillarLink}${siblingLinks ? `\nLink ook naar deze gerelateerde cluster artikelen:\n${siblingLinks}` : ""}`;
+    }
+    // Also add non-cluster posts as secondary links
+    const nonClusterPosts = req.existingPosts?.slice(0, 8);
+    if (nonClusterPosts?.length) {
+      internalLinksInstruction += `\n\n## OVERIGE INTERNE LINKS (LAGERE PRIORITEIT):\n${nonClusterPosts
+        .map((p) => `- <a href="${req.siteBaseUrl || ""}/${p.slug}">${p.title}</a>`)
+        .join("\n")}\nGebruik 1-2 van deze waar relevant.`;
+    }
+  } else if (req.existingPosts?.length) {
+    internalLinksInstruction = `\n## INTERNAL LINKS:\nWhere naturally relevant, link to these existing articles:\n${req.existingPosts
+      .slice(0, 15)
+      .map(
+        (p) =>
+          `- <a href="${req.siteBaseUrl || ""}/${p.slug}">${p.title}</a>`
+      )
+      .join("\n")}\nUse 2-4 internal links where they genuinely add value.`;
+  }
+
+  // Build structure template instruction
+  let structureInstruction = "";
+  if (req.structureTemplate?.sections?.length) {
+    const sectionLines = req.structureTemplate.sections.map((s, i) => {
+      let line = `\n### Sectie ${i + 1}: ${s.label} (H2)\nInstructie: ${s.instruction}`;
+      if (s.children?.length) {
+        line += s.children.map((c, ci) => `\n#### Subsectie ${i + 1}.${ci + 1}: ${c.label} (H3)\nInstructie: ${c.instruction}`).join("");
+      }
+      return line;
+    }).join("\n");
+    structureInstruction = `\n## ARTIKELSTRUCTUUR (VERPLICHT):\nVolg exact deze structuur:${sectionLines}\n`;
+  }
+
+  // Build preferred domains instruction
+  let externalLinksInstruction = `\n## EXTERNAL LINKS:\nInclude 3-5 links to authoritative external sources. Use target="_blank" rel="noopener noreferrer".`;
+  if (req.preferredDomains?.length) {
+    const domainList = req.preferredDomains
+      .map((d) => `- ${d.domain}${d.label ? ` (${d.label})` : ""}`)
+      .join("\n");
+    externalLinksInstruction = `\n## EXTERNAL LINKS:\nGebruik bij voorkeur deze autoritieve bronnen:\n${domainList}\nInclude 3-5 externe links totaal. Use target="_blank" rel="noopener noreferrer".`;
+  }
 
   // Stage 2: Full enhanced article
   const articleResponse = await client.chat.completions.create({
@@ -190,7 +271,7 @@ export async function generateEnhancedArticle(
 
 ## FORMAT REQUIREMENTS:
 - 1500-2500 words in ${language}
-- Use <h2 id="kebab-case-id"> for main sections (4-6 sections)
+- Use <h2 id="kebab-case-id"> for main sections${structureInstruction ? "" : " (4-6 sections)"}
 - Use <h3 id="kebab-case-id"> for subsections where appropriate
 - Use <p> tags for all paragraphs
 - Use <ul>/<ol>/<li> for lists
@@ -198,7 +279,7 @@ export async function generateEnhancedArticle(
 - Use <blockquote> for key takeaways or expert quotes
 - Do NOT include <h1> (WordPress handles the title)
 - Do NOT include a Table of Contents (it is generated separately)
-
+${structureInstruction}
 ## IMAGE PLACEHOLDERS:
 Insert exactly 2-3 image markers in relevant locations:
 <!-- IMAGE:brief description of what image should show -->
@@ -207,8 +288,7 @@ Insert exactly 2-3 image markers in relevant locations:
 Insert exactly 1-2 YouTube search markers:
 <!-- YOUTUBE:search query to find a relevant tutorial or explainer video -->
 ${internalLinksInstruction}
-## EXTERNAL LINKS:
-Include 3-5 links to authoritative external sources. Use target="_blank" rel="noopener noreferrer".
+${externalLinksInstruction}
 
 ## FAQ SECTION:
 End with a FAQ section containing 3-5 relevant questions and concise answers.
@@ -505,4 +585,37 @@ export async function generateSchemaMarkup(
     response_format: { type: "json_object" },
   });
   return JSON.parse(response.choices[0].message.content || "{}");
+}
+
+/**
+ * Suggest supporting subtopics for an SEO topic cluster.
+ */
+export async function suggestClusterTopics(
+  pillarTopic: string,
+  language: string = "Dutch",
+  existingTopics?: string[]
+): Promise<Array<{ title: string; description: string; keywords: string[] }>> {
+  const client = getClient();
+  const existingNote = existingTopics?.length
+    ? `\nBestaande subtopics (suggereer deze NIET opnieuw): ${existingTopics.join(", ")}`
+    : "";
+
+  const response = await client.chat.completions.create({
+    model: "gpt-4o",
+    temperature: 0.8,
+    messages: [
+      {
+        role: "system",
+        content: `You are an SEO topic cluster strategist. Given a pillar topic, suggest 5-8 supporting subtopics that would form an effective SEO topic cluster. Each subtopic should be specific enough for a standalone article but clearly related to the pillar. Respond in ${language}. Return ONLY a JSON object with: { "suggestions": [{ "title": "...", "description": "brief description", "keywords": ["kw1", "kw2"] }] }`,
+      },
+      {
+        role: "user",
+        content: `Pillar topic: "${pillarTopic}"${existingNote}\n\nSuggest supporting subtopics for this SEO cluster.`,
+      },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const data = JSON.parse(response.choices[0].message.content || '{"suggestions":[]}');
+  return data.suggestions || [];
 }

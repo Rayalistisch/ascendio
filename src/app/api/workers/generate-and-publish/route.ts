@@ -36,7 +36,7 @@ export async function POST(request: Request) {
   }
 
   const body = JSON.parse(rawBody);
-  const { runId, siteId, userId } = body;
+  const { runId, siteId, userId, clusterId, clusterTopicId, templateId } = body;
 
   if (!runId || !siteId || !userId) {
     return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
@@ -129,6 +129,98 @@ export async function POST(request: Request) {
       });
     }
 
+    // 3.5. Load template, cluster context, and preferred domains
+    let structureTemplate = undefined;
+    let clusterContext = undefined;
+    let forcedTopic = undefined;
+    let forcedTitle = undefined;
+    let targetKeywords: string[] | undefined;
+
+    // Load article template
+    const effectiveTemplateId = templateId || undefined;
+    if (effectiveTemplateId) {
+      const { data: template } = await supabase
+        .from("asc_article_templates")
+        .select("structure")
+        .eq("id", effectiveTemplateId)
+        .single();
+      if (template) {
+        structureTemplate = { sections: template.structure };
+        await logStep(supabase, runId, "info", "Artikeltemplate geladen");
+      }
+    } else if (clusterId) {
+      // Check if cluster has a template
+      const { data: clusterForTemplate } = await supabase
+        .from("asc_clusters")
+        .select("template_id")
+        .eq("id", clusterId)
+        .single();
+      if (clusterForTemplate?.template_id) {
+        const { data: template } = await supabase
+          .from("asc_article_templates")
+          .select("structure")
+          .eq("id", clusterForTemplate.template_id)
+          .single();
+        if (template) structureTemplate = { sections: template.structure };
+      }
+    }
+
+    // Load cluster context
+    if (clusterId) {
+      const { data: cluster } = await supabase
+        .from("asc_clusters")
+        .select("*")
+        .eq("id", clusterId)
+        .single();
+
+      if (cluster) {
+        const { data: clusterTopics } = await supabase
+          .from("asc_cluster_topics")
+          .select("*")
+          .eq("cluster_id", clusterId);
+
+        const publishedSiblings = (clusterTopics || [])
+          .filter((t) => t.wp_post_url && t.id !== clusterTopicId)
+          .map((t) => ({
+            slug: t.wp_post_url!.split("/").filter(Boolean).pop() || "",
+            title: t.title,
+            url: t.wp_post_url!,
+          }));
+
+        const isPillar = !clusterTopicId;
+        const currentTopic = clusterTopicId
+          ? clusterTopics?.find((t) => t.id === clusterTopicId)
+          : null;
+
+        clusterContext = {
+          pillarTopic: cluster.pillar_topic,
+          pillarUrl: cluster.pillar_wp_post_url || undefined,
+          siblingArticles: publishedSiblings,
+          isPillarArticle: isPillar,
+        };
+
+        if (currentTopic) {
+          forcedTopic = currentTopic.title;
+          targetKeywords = currentTopic.target_keywords;
+        } else if (isPillar) {
+          forcedTopic = cluster.pillar_topic;
+          targetKeywords = cluster.pillar_keywords;
+        }
+
+        await logStep(supabase, runId, "info", `Cluster context geladen: ${cluster.name}`, {
+          isPillar,
+          siblings: publishedSiblings.length,
+        });
+      }
+    }
+
+    // Load preferred external domains
+    const { data: preferredDomains } = await supabase
+      .from("asc_preferred_domains")
+      .select("domain, label")
+      .eq("site_id", siteId)
+      .order("priority", { ascending: false });
+
     // 4. Generate enhanced article
     await logStep(supabase, runId, "info", "Artikel genereren via OpenAI...");
     const article = await generateEnhancedArticle({
@@ -138,6 +230,12 @@ export async function POST(request: Request) {
       sourceTitle,
       existingPosts,
       siteBaseUrl: site.wp_base_url.replace(/\/+$/, ""),
+      structureTemplate,
+      clusterContext,
+      preferredDomains: preferredDomains?.map((d) => ({ domain: d.domain, label: d.label })),
+      forcedTopic,
+      forcedTitle,
+      targetKeywords,
     });
 
     await supabase
@@ -284,6 +382,47 @@ export async function POST(request: Request) {
         finished_at: new Date().toISOString(),
       })
       .eq("id", runId);
+
+    // 12.5. Update cluster topic status if applicable
+    if (clusterTopicId) {
+      await supabase
+        .from("asc_cluster_topics")
+        .update({
+          status: "published",
+          wp_post_id: post.id,
+          wp_post_url: post.url,
+          run_id: runId,
+        })
+        .eq("id", clusterTopicId);
+      await logStep(supabase, runId, "info", "Cluster topic bijgewerkt naar published");
+    }
+    if (clusterId && !clusterTopicId) {
+      // This was a pillar article generation
+      await supabase
+        .from("asc_clusters")
+        .update({
+          pillar_wp_post_id: post.id,
+          pillar_wp_post_url: post.url,
+          pillar_run_id: runId,
+        })
+        .eq("id", clusterId);
+      await logStep(supabase, runId, "info", "Cluster pillar bijgewerkt");
+    }
+
+    // Check if all cluster topics are published → mark cluster as complete
+    if (clusterId) {
+      const { data: remainingTopics } = await supabase
+        .from("asc_cluster_topics")
+        .select("id")
+        .eq("cluster_id", clusterId)
+        .neq("status", "published");
+      if (remainingTopics && remainingTopics.length === 0) {
+        await supabase
+          .from("asc_clusters")
+          .update({ status: "complete", updated_at: new Date().toISOString() })
+          .eq("id", clusterId);
+      }
+    }
 
     // 13. Auto-enqueue social media post if enabled
     if (site.social_auto_post && site.social_webhook_url) {

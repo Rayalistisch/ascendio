@@ -4,8 +4,11 @@ const QSTASH_TOKEN = process.env.QSTASH_TOKEN;
 export async function enqueueGenerateJob(params: {
   runId: string;
   siteId: string;
-  scheduleId: string;
+  scheduleId?: string;
   userId: string;
+  clusterId?: string;
+  clusterTopicId?: string;
+  templateId?: string;
   retryCount?: number;
 }): Promise<{ messageId: string }> {
   return publishToQStash("/api/workers/generate-and-publish", params);

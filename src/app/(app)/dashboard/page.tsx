@@ -2,6 +2,10 @@ import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 
+interface DashboardPageProps {
+  searchParams: Promise<{ siteId?: string | string[] }>;
+}
+
 function formatDate(dateString: string) {
   return new Date(dateString).toLocaleDateString("nl-NL", {
     day: "numeric",
@@ -31,13 +35,44 @@ function StatusBadge({ status }: { status: string }) {
   }
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const supabase = await createClient();
+  const resolvedSearchParams = await searchParams;
+  const rawSiteId = resolvedSearchParams.siteId;
+  const requestedSiteId = Array.isArray(rawSiteId) ? rawSiteId[0] : rawSiteId;
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) return null;
+
+  let activeSiteId: string | null = null;
+  let activeSiteName: string | null = null;
+
+  if (requestedSiteId) {
+    const { data: activeSite } = await supabase
+      .from("asc_sites")
+      .select("id, name")
+      .eq("id", requestedSiteId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (activeSite) {
+      activeSiteId = activeSite.id;
+      activeSiteName = activeSite.name;
+    }
+  }
+
+  const withSiteFilter = <T,>(query: T): T => {
+    if (!activeSiteId) return query;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (query as any).eq("site_id", activeSiteId);
+  };
+
+  const withSiteHref = (href: string): string => {
+    if (!activeSiteId) return href;
+    return `${href}?siteId=${encodeURIComponent(activeSiteId)}`;
+  };
 
   // Fetch all stats in parallel
   const [
@@ -50,48 +85,68 @@ export default async function DashboardPage() {
     indexedResult,
     avgSeoScoreResult,
   ] = await Promise.all([
-    supabase
+    (activeSiteId
+      ? supabase
+          .from("asc_sites")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id)
+          .eq("id", activeSiteId)
+      : supabase
       .from("asc_sites")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id),
-    supabase
+      .eq("user_id", user.id)),
+    withSiteFilter(
+      supabase
       .from("asc_schedules")
       .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
-      .eq("is_enabled", true),
-    supabase
+      .eq("is_enabled", true)
+    ),
+    withSiteFilter(
+      supabase
       .from("asc_runs")
       .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
-      .eq("status", "published"),
-    supabase
+      .eq("status", "published")
+    ),
+    withSiteFilter(
+      supabase
       .from("asc_runs")
       .select(
         "id, topic, article_title, status, wp_post_url, images_count, internal_links_added, external_links_added, created_at, asc_sites(name)"
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
-      .limit(10),
-    supabase
+      .limit(10)
+    ),
+    withSiteFilter(
+      supabase
       .from("asc_scan_issues")
       .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
-      .eq("is_fixed", true),
-    supabase
+      .eq("is_fixed", true)
+    ),
+    withSiteFilter(
+      supabase
       .from("asc_social_posts")
       .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
-      .eq("status", "sent"),
-    supabase
+      .eq("status", "sent")
+    ),
+    withSiteFilter(
+      supabase
       .from("asc_indexing_requests")
       .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
-      .eq("status", "submitted"),
-    supabase
+      .eq("status", "submitted")
+    ),
+    withSiteFilter(
+      supabase
       .from("asc_wp_posts")
       .select("seo_score")
       .eq("user_id", user.id)
-      .not("seo_score", "is", null),
+      .not("seo_score", "is", null)
+    ),
   ]);
 
   const sitesCount = sitesResult.count ?? 0;
@@ -127,17 +182,21 @@ export default async function DashboardPage() {
   }));
 
   const stats = [
-    { label: "Sites", value: sitesCount, href: "/sites" },
-    { label: "Actieve schema's", value: schedulesCount, href: "/schedule" },
-    { label: "Gepubliceerd", value: publishedCount, href: "/runs" },
+    { label: "Sites", value: sitesCount, href: withSiteHref("/sites") },
+    {
+      label: "Actieve planningen",
+      value: schedulesCount,
+      href: withSiteHref("/schedule"),
+    },
+    { label: "Gepubliceerd", value: publishedCount, href: withSiteHref("/runs") },
     {
       label: "Gem. SEO-score",
       value: avgSeoScore !== null ? `${avgSeoScore}/100` : "—",
-      href: "/seo-editor",
+      href: withSiteHref("/seo-editor"),
     },
-    { label: "Issues gefixt", value: issuesFixedCount, href: "/scanner" },
-    { label: "Social posts", value: socialSentCount, href: "/social" },
-    { label: "Geïndexeerd", value: indexedCount, href: "/indexing" },
+    { label: "Issues gefixt", value: issuesFixedCount, href: withSiteHref("/scanner") },
+    { label: "Social posts", value: socialSentCount, href: withSiteHref("/social") },
+    { label: "Geïndexeerd", value: indexedCount, href: withSiteHref("/indexing") },
   ];
 
   return (
@@ -146,7 +205,9 @@ export default async function DashboardPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground mt-1">
-          Overzicht van je AI-powered SEO platform.
+          {activeSiteName
+            ? `Overzicht van je AI-powered SEO platform voor workspace "${activeSiteName}".`
+            : "Overzicht van je AI-powered SEO platform."}
         </p>
       </div>
 
@@ -175,7 +236,7 @@ export default async function DashboardPage() {
             Recente runs
           </h2>
           <Link
-            href="/runs"
+            href={withSiteHref("/runs")}
             className="text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             Alles bekijken
@@ -187,10 +248,10 @@ export default async function DashboardPage() {
             <p className="text-muted-foreground">
               Nog geen runs uitgevoerd. Maak een{" "}
               <Link
-                href="/schedule"
+                href={withSiteHref("/schedule")}
                 className="text-primary underline underline-offset-4"
               >
-                schema
+                planning
               </Link>{" "}
               aan om te beginnen.
             </p>

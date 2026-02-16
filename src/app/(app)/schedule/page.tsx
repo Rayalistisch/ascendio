@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 
@@ -60,6 +61,11 @@ function extractTimeFromRRule(rrule: string): string {
 }
 
 export default function SchedulePage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const searchParamsString = searchParams.toString();
+  const requestedSiteIdFromUrl = searchParams.get("siteId") || "";
   const [sites, setSites] = useState<Site[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,31 +79,58 @@ export default function SchedulePage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
 
+  function updateSiteInUrl(nextSiteId: string) {
+    const params = new URLSearchParams(searchParamsString);
+    params.set("siteId", nextSiteId);
+    router.replace(`${pathname}?${params.toString()}`);
+  }
+
   const fetchData = useCallback(async () => {
     try {
-      const [sitesRes, schedulesRes] = await Promise.all([
-        fetch("/api/sites"),
-        fetch("/api/schedules"),
-      ]);
+      const sitesRes = await fetch("/api/sites");
       const sitesData = await sitesRes.json();
-      const schedulesData = await schedulesRes.json();
-      setSites(sitesData.sites ?? []);
-      setSchedules(schedulesData.schedules ?? []);
+      const siteList: Site[] = sitesData.sites ?? [];
+      setSites(siteList);
 
-      // Set default site
-      if (sitesData.sites?.length > 0 && !selectedSiteId) {
-        setSelectedSiteId(sitesData.sites[0].id);
+      let effectiveSiteId = selectedSiteId;
+      if (!effectiveSiteId) {
+        if (
+          requestedSiteIdFromUrl &&
+          siteList.some((site) => site.id === requestedSiteIdFromUrl)
+        ) {
+          effectiveSiteId = requestedSiteIdFromUrl;
+        } else {
+          effectiveSiteId = siteList[0]?.id || "";
+        }
+        if (effectiveSiteId) setSelectedSiteId(effectiveSiteId);
       }
+
+      if (effectiveSiteId && requestedSiteIdFromUrl !== effectiveSiteId) {
+        updateSiteInUrl(effectiveSiteId);
+      }
+
+      const schedulesRes = await fetch(
+        effectiveSiteId
+          ? `/api/schedules?siteId=${encodeURIComponent(effectiveSiteId)}`
+          : "/api/schedules"
+      );
+      const schedulesData = await schedulesRes.json();
+      setSchedules(schedulesData.schedules ?? []);
     } catch {
       // Silently handle fetch errors
     } finally {
       setLoading(false);
     }
-  }, [selectedSiteId]);
+  }, [pathname, requestedSiteIdFromUrl, router, searchParamsString, selectedSiteId]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  function handleSiteChange(nextSiteId: string) {
+    setSelectedSiteId(nextSiteId);
+    updateSiteInUrl(nextSiteId);
+  }
 
   async function handleToggle(scheduleId: string, isEnabled: boolean) {
     // Optimistic update
@@ -180,7 +213,7 @@ export default function SchedulePage() {
         setCreateError(data.error || "Er ging iets mis.");
       }
     } catch {
-      setCreateError("Er ging iets mis bij het aanmaken van het schema.");
+      setCreateError("Er ging iets mis bij het aanmaken van de planning.");
     } finally {
       setCreateLoading(false);
     }
@@ -190,7 +223,7 @@ export default function SchedulePage() {
     return (
       <div className="space-y-8">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Schema&apos;s</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Planning</h1>
           <p className="text-muted-foreground mt-1">
             Plan automatische publicaties voor je sites.
           </p>
@@ -211,7 +244,7 @@ export default function SchedulePage() {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Schema&apos;s</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Planning</h1>
         <p className="text-muted-foreground mt-1">
           Plan automatische publicaties voor je sites.
         </p>
@@ -220,13 +253,13 @@ export default function SchedulePage() {
       {/* Existing schedules */}
       <div className="space-y-4">
         <h2 className="text-lg font-semibold tracking-tight">
-          Actieve schema&apos;s
+          Actieve planningen
         </h2>
 
         {schedules.length === 0 ? (
           <div className="rounded-xl border bg-card p-8 text-center">
             <p className="text-muted-foreground">
-              Nog geen schema&apos;s aangemaakt. Gebruik het formulier hieronder
+              Nog geen planningen aangemaakt. Gebruik het formulier hieronder
               om te beginnen.
             </p>
           </div>
@@ -307,7 +340,7 @@ export default function SchedulePage() {
       {/* Create new schedule */}
       <div className="space-y-4">
         <h2 className="text-lg font-semibold tracking-tight">
-          Nieuw schema aanmaken
+          Nieuwe planning aanmaken
         </h2>
 
         {sites.length === 0 ? (
@@ -320,7 +353,7 @@ export default function SchedulePage() {
               >
                 site
               </a>{" "}
-              toe voordat je een schema kunt aanmaken.
+              toe voordat je een planning kunt aanmaken.
             </p>
           </div>
         ) : (
@@ -340,7 +373,7 @@ export default function SchedulePage() {
                 <select
                   id="siteId"
                   value={selectedSiteId}
-                  onChange={(e) => setSelectedSiteId(e.target.value)}
+                  onChange={(e) => handleSiteChange(e.target.value)}
                   required
                   className="flex h-9 w-full items-center rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] appearance-none bg-no-repeat bg-[length:1rem] bg-[position:right_0.5rem_center] pr-8 [background-image:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23888%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22/%3E%3C/svg%3E')]"
                 >
@@ -441,7 +474,7 @@ export default function SchedulePage() {
                 disabled={!selectedSiteId || createLoading}
                 className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
               >
-                {createLoading ? "Aanmaken..." : "Schema aanmaken"}
+                {createLoading ? "Aanmaken..." : "Planning aanmaken"}
               </button>
             </div>
           </form>

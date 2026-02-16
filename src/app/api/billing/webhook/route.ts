@@ -1,0 +1,131 @@
+import { createHmac } from "crypto";
+import { NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getTierById, getTierByPriceId, TierId } from "@/lib/billing";
+
+function verifyStripeSignature(payload: string, signatureHeader: string | null): boolean {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret || !signatureHeader) return false;
+
+  const elements = signatureHeader.split(",").reduce<Record<string, string>>((acc, part) => {
+    const [k, v] = part.split("=");
+    if (k && v) acc[k] = v;
+    return acc;
+  }, {});
+
+  if (!elements.t || !elements.v1) return false;
+
+  const signedPayload = `${elements.t}.${payload}`;
+  const expected = createHmac("sha256", secret)
+    .update(signedPayload)
+    .digest("hex");
+
+  return expected === elements.v1;
+}
+
+export async function POST(request: Request) {
+  const payload = await request.text();
+  const signature = request.headers.get("stripe-signature");
+
+  if (!verifyStripeSignature(payload, signature)) {
+    return NextResponse.json({ error: "Invalid Stripe signature" }, { status: 401 });
+  }
+
+  const event = JSON.parse(payload) as {
+    type: string;
+    data: { object: Record<string, unknown> };
+  };
+
+  const supabase = createAdminClient();
+  const object = event.data.object;
+
+  if (event.type === "checkout.session.completed") {
+    const userId = object.metadata && typeof object.metadata === "object"
+      ? (object.metadata as Record<string, string>).user_id
+      : undefined;
+    const tierFromMetadata = object.metadata && typeof object.metadata === "object"
+      ? (object.metadata as Record<string, string>).tier_id
+      : undefined;
+
+    if (userId) {
+      const tier = (tierFromMetadata && getTierById(tierFromMetadata))
+        ? tierFromMetadata as TierId
+        : "starter";
+      const tierDef = getTierById(tier);
+
+      await supabase.from("asc_subscriptions").upsert(
+        {
+          user_id: userId,
+          tier,
+          status: "active",
+          stripe_customer_id: String(object.customer || ""),
+          stripe_subscription_id: String(object.subscription || ""),
+          credits_monthly: tierDef?.includedCredits || 0,
+          credits_remaining: tierDef?.includedCredits || 0,
+          cancel_at_period_end: false,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      );
+    }
+  }
+
+  if (
+    event.type === "customer.subscription.created" ||
+    event.type === "customer.subscription.updated" ||
+    event.type === "customer.subscription.deleted"
+  ) {
+    const sub = object;
+
+    const priceId =
+      Array.isArray((sub.items as { data?: Array<{ price?: { id?: string } }> })?.data)
+        ? (sub.items as { data: Array<{ price?: { id?: string } }> }).data[0]?.price?.id
+        : undefined;
+
+    const tierFromPrice = priceId ? getTierByPriceId(priceId)?.id : undefined;
+    const tierFromMetadata =
+      sub.metadata && typeof sub.metadata === "object"
+        ? (sub.metadata as Record<string, string>).tier_id
+        : undefined;
+    const tier = (tierFromMetadata || tierFromPrice || "starter") as TierId;
+    const tierDef = getTierById(tier);
+
+    const row = {
+      status: String(sub.status || "inactive"),
+      tier,
+      stripe_customer_id: String(sub.customer || ""),
+      stripe_subscription_id: String(sub.id || ""),
+      cancel_at_period_end: Boolean(sub.cancel_at_period_end),
+      current_period_start: sub.current_period_start
+        ? new Date(Number(sub.current_period_start) * 1000).toISOString()
+        : null,
+      current_period_end: sub.current_period_end
+        ? new Date(Number(sub.current_period_end) * 1000).toISOString()
+        : null,
+      credits_monthly: tierDef?.includedCredits || 0,
+      updated_at: new Date().toISOString(),
+    };
+
+    const userIdFromMetadata =
+      sub.metadata && typeof sub.metadata === "object"
+        ? (sub.metadata as Record<string, string>).user_id
+        : undefined;
+
+    if (userIdFromMetadata) {
+      await supabase.from("asc_subscriptions").upsert(
+        {
+          ...row,
+          user_id: userIdFromMetadata,
+        },
+        { onConflict: "user_id" }
+      );
+    } else {
+      await supabase
+        .from("asc_subscriptions")
+        .update(row)
+        .eq("stripe_subscription_id", String(sub.id || ""));
+    }
+  }
+
+  return NextResponse.json({ received: true });
+}

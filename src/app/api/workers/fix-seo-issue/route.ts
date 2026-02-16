@@ -14,13 +14,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  const { issueId, siteId } = JSON.parse(rawBody);
+  const { issueId, siteId, userId } = JSON.parse(rawBody);
+  if (!issueId || !siteId || !userId) {
+    return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
+  }
   const supabase = createAdminClient();
 
-  const { data: issue } = await supabase.from("asc_scan_issues").select("*").eq("id", issueId).single();
+  const { data: issue } = await supabase
+    .from("asc_scan_issues")
+    .select("*")
+    .eq("id", issueId)
+    .eq("user_id", userId)
+    .eq("site_id", siteId)
+    .single();
   if (!issue) return NextResponse.json({ error: "Issue not found" }, { status: 404 });
 
-  const { data: site } = await supabase.from("asc_sites").select("*").eq("id", siteId).single();
+  const { data: site } = await supabase
+    .from("asc_sites")
+    .select("*")
+    .eq("id", siteId)
+    .eq("user_id", userId)
+    .single();
   if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 });
 
   const creds = { baseUrl: site.wp_base_url, username: site.wp_username, appPassword: decrypt(site.wp_app_password_encrypted) };
@@ -53,12 +67,17 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Issue type not auto-fixable" }, { status: 400 });
     }
 
-    await supabase.from("asc_scan_issues").update({ is_fixed: true, fixed_at: new Date().toISOString() }).eq("id", issueId);
+    await supabase
+      .from("asc_scan_issues")
+      .update({ is_fixed: true, fixed_at: new Date().toISOString() })
+      .eq("id", issueId)
+      .eq("user_id", userId);
 
     // Update report fix count
     const { data: report } = await supabase.from("asc_scan_issues")
       .select("report_id")
       .eq("id", issueId)
+      .eq("user_id", userId)
       .single();
     if (report) {
       const { count } = await supabase.from("asc_scan_issues")

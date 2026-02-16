@@ -1,0 +1,46 @@
+<svg width="1200" height="760" viewBox="0 0 1200 760" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#113940"/>
+      <stop offset="1" stop-color="#081A1E"/>
+    </linearGradient>
+    <linearGradient id="nodeA" x1="0" y1="0" x2="340" y2="180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2AE0E2" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#2AE0E2" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="nodeB" x1="0" y1="0" x2="340" y2="180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFB066" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#FFB066" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="nodeC" x1="0" y1="0" x2="340" y2="180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7AE3AB" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#7AE3AB" stop-opacity="0.08"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="760" rx="36" fill="url(#bg)"/>
+  <g opacity="0.35">
+    <circle cx="1010" cy="122" r="165" fill="#2AE0E2"/>
+    <circle cx="187" cy="622" r="170" fill="#FFB066"/>
+  </g>
+  <g stroke="#B9F8F8" stroke-opacity="0.33" stroke-width="2">
+    <path d="M240 182C325 214 366 255 436 298"/>
+    <path d="M440 298C520 348 558 390 638 436"/>
+    <path d="M645 438C715 472 768 504 872 548"/>
+  </g>
+  <rect x="120" y="112" width="320" height="170" rx="20" fill="url(#nodeA)" stroke="#98F0F0" stroke-opacity="0.5"/>
+  <rect x="438" y="292" width="330" height="180" rx="20" fill="url(#nodeB)" stroke="#FFD4AA" stroke-opacity="0.5"/>
+  <rect x="760" y="508" width="320" height="170" rx="20" fill="url(#nodeC)" stroke="#C0F6D8" stroke-opacity="0.5"/>
+  <g fill="#D8FFFF" fill-opacity="0.92" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="26" letter-spacing="2">
+    <text x="154" y="165">SOURCE INTAKE</text>
+    <text x="474" y="350" fill="#FFE5CF">CONTENT GENERATION</text>
+    <text x="795" y="566" fill="#D6FFE8">PUBLISH + DISTRIBUTE</text>
+  </g>
+  <g fill="#D9F8FA" fill-opacity="0.86" font-family="Inter, Arial, sans-serif" font-size="19">
+    <text x="154" y="208">RSS, nieuws en keywords geclusterd</text>
+    <text x="154" y="236">tot bruikbare content-invoer.</text>
+    <text x="474" y="394">Artikel, meta, schema en visuals</text>
+    <text x="474" y="422">in 1 georkestreerde run.</text>
+    <text x="795" y="610">WordPress publicatie, social push,</text>
+    <text x="795" y="638">en indexing request automatisch.</text>
+  </g>
+</svg>

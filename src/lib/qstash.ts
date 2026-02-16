@@ -20,14 +20,87 @@ function getAppUrl(): string {
     : process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 }
 
+function isLocalAppUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return host === "localhost" || host === "127.0.0.1";
+  } catch {
+    return url.includes("localhost") || url.includes("127.0.0.1");
+  }
+}
+
+async function createLocalSignature(body: string): Promise<string | null> {
+  const key = process.env.QSTASH_CURRENT_SIGNING_KEY || process.env.QSTASH_NEXT_SIGNING_KEY;
+  if (!key) return null;
+  const { createHmac } = await import("crypto");
+  return createHmac("sha256", key).update(body).digest("base64");
+}
+
+async function publishDirectFallback(
+  path: string,
+  payload: Record<string, unknown>,
+  options?: { fireAndForget?: boolean }
+): Promise<{ messageId: string }> {
+  const destination = `${getAppUrl()}${path}`;
+  const body = JSON.stringify(payload);
+  const signature = await createLocalSignature(body);
+
+  if (options?.fireAndForget) {
+    void fetch(destination, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(signature ? { "upstash-signature": signature } : {}),
+      },
+      body,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const resBody = await response.text();
+          console.error(`Direct async publish failed: ${response.status} ${resBody}`);
+        }
+      })
+      .catch((err) => {
+        console.error(`Direct async publish request failed: ${err instanceof Error ? err.message : "unknown"}`);
+      });
+
+    return { messageId: `local-${Date.now()}` };
+  }
+
+  const response = await fetch(destination, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(signature ? { "upstash-signature": signature } : {}),
+    },
+    body,
+  });
+  if (!response.ok) {
+    const resBody = await response.text();
+    throw new Error(`Direct publish failed: ${response.status} ${resBody}`);
+  }
+  return { messageId: `local-${Date.now()}` };
+}
+
 async function publishToQStash(
   path: string,
   payload: Record<string, unknown>,
   options?: { retries?: number; retryAfter?: number }
 ): Promise<{ messageId: string }> {
-  if (!QSTASH_TOKEN) throw new Error("QSTASH_TOKEN is not set");
+  const appUrl = getAppUrl();
 
-  const destination = `${getAppUrl()}${path}`;
+  if (process.env.NODE_ENV !== "production" && isLocalAppUrl(appUrl)) {
+    return publishDirectFallback(path, payload, { fireAndForget: true });
+  }
+
+  if (!QSTASH_TOKEN) {
+    if (process.env.NODE_ENV !== "production") {
+      return publishDirectFallback(path, payload, { fireAndForget: true });
+    }
+    throw new Error("QSTASH_TOKEN is not set");
+  }
+
+  const destination = `${appUrl}${path}`;
   const response = await fetch(`${QSTASH_URL}/v2/publish/${destination}`, {
     method: "POST",
     headers: {
@@ -41,6 +114,10 @@ async function publishToQStash(
 
   if (!response.ok) {
     const body = await response.text();
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(`QStash publish failed (${response.status}); falling back to direct publish`);
+      return publishDirectFallback(path, payload, { fireAndForget: true });
+    }
     throw new Error(`QStash publish failed: ${response.status} ${body}`);
   }
 

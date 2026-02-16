@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,9 @@ function formatDate(d: string | null) {
 }
 
 export default function IndexingPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [sites, setSites] = useState<Site[]>([]);
   const [siteId, setSiteId] = useState("");
   const [requests, setRequests] = useState<IndexingRequest[]>([]);
@@ -39,14 +43,28 @@ export default function IndexingPage() {
   const [newUrl, setNewUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  function updateSiteInUrl(nextSiteId: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("siteId", nextSiteId);
+    router.replace(`${pathname}?${params.toString()}`);
+  }
+
   useEffect(() => {
     fetch("/api/sites")
       .then((r) => r.json())
       .then((d) => {
-        const list = d.sites ?? [];
+        const list: Site[] = d.sites ?? [];
         setSites(list);
-        if (list.length > 0) setSiteId(list[0].id);
+        if (list.length === 0) return;
+        const siteFromUrl = searchParams.get("siteId");
+        if (siteFromUrl && list.some((site) => site.id === siteFromUrl)) {
+          setSiteId(siteFromUrl);
+          return;
+        }
+        setSiteId(list[0].id);
+        updateSiteInUrl(list[0].id);
       });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchRequests = useCallback(async () => {
@@ -83,6 +101,11 @@ export default function IndexingPage() {
     }
   }
 
+  function handleSiteChange(nextSiteId: string) {
+    setSiteId(nextSiteId);
+    updateSiteInUrl(nextSiteId);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -93,7 +116,7 @@ export default function IndexingPage() {
           </p>
         </div>
         {sites.length > 1 && (
-          <NativeSelect value={siteId} onChange={(e) => setSiteId(e.target.value)} className="w-48">
+          <NativeSelect value={siteId} onChange={(e) => handleSiteChange(e.target.value)} className="w-48">
             {sites.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}

@@ -12,14 +12,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  const { socialPostId } = JSON.parse(rawBody);
+  const { socialPostId, userId } = JSON.parse(rawBody);
+  if (!socialPostId || !userId) {
+    return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
+  }
   const supabase = createAdminClient();
 
-  const { data: post } = await supabase.from("asc_social_posts").select("*").eq("id", socialPostId).single();
+  const { data: post } = await supabase
+    .from("asc_social_posts")
+    .select("*")
+    .eq("id", socialPostId)
+    .eq("user_id", userId)
+    .single();
   if (!post) return NextResponse.json({ error: "Post not found" }, { status: 404 });
 
   if (!post.webhook_url) {
-    await supabase.from("asc_social_posts").update({ status: "failed", error_message: "No webhook URL" }).eq("id", socialPostId);
+    await supabase
+      .from("asc_social_posts")
+      .update({ status: "failed", error_message: "No webhook URL" })
+      .eq("id", socialPostId)
+      .eq("user_id", userId);
     return NextResponse.json({ error: "No webhook URL" }, { status: 400 });
   }
 
@@ -31,9 +43,17 @@ export async function POST(request: Request) {
   });
 
   if (result.success) {
-    await supabase.from("asc_social_posts").update({ status: "sent", posted_at: new Date().toISOString() }).eq("id", socialPostId);
+    await supabase
+      .from("asc_social_posts")
+      .update({ status: "sent", posted_at: new Date().toISOString() })
+      .eq("id", socialPostId)
+      .eq("user_id", userId);
   } else {
-    await supabase.from("asc_social_posts").update({ status: "failed", error_message: result.error }).eq("id", socialPostId);
+    await supabase
+      .from("asc_social_posts")
+      .update({ status: "failed", error_message: result.error })
+      .eq("id", socialPostId)
+      .eq("user_id", userId);
   }
 
   return NextResponse.json(result);

@@ -4,6 +4,10 @@ interface WPCredentials {
   appPassword: string;
 }
 
+interface WPRequestOptions {
+  timeoutMs?: number;
+}
+
 function authHeader(creds: WPCredentials): string {
   const token = Buffer.from(`${creds.username}:${creds.appPassword}`).toString("base64");
   return `Basic ${token}`;
@@ -75,23 +79,27 @@ export async function createPost(
     title: string;
     content: string;
     excerpt: string;
-    featuredMediaId: number;
+    featuredMediaId?: number;
     status?: "publish" | "draft";
   }
 ): Promise<{ id: number; url: string }> {
+  const body: Record<string, unknown> = {
+    title: params.title,
+    content: params.content,
+    excerpt: params.excerpt,
+    status: params.status || "publish",
+  };
+  if (params.featuredMediaId) {
+    body.featured_media = params.featuredMediaId;
+  }
+
   const response = await fetch(wpApiUrl(creds, "/posts"), {
     method: "POST",
     headers: {
       Authorization: authHeader(creds),
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      title: params.title,
-      content: params.content,
-      excerpt: params.excerpt,
-      featured_media: params.featuredMediaId,
-      status: params.status || "publish",
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -106,18 +114,31 @@ export async function createPost(
 // Fetch all published posts (paginated)
 export async function fetchAllPosts(
   creds: WPCredentials,
-  options?: { perPage?: number; fields?: string[] }
+  options?: { perPage?: number; fields?: string[]; maxPages?: number; timeoutMs?: number }
 ): Promise<Array<Record<string, any>>> {
   const perPage = options?.perPage || 100;
   const fields = options?.fields?.join(',') || 'id,title,slug,link,content,excerpt,featured_media,meta,status,date,modified';
+  const maxPages = options?.maxPages;
   let page = 1;
   const allPosts: Array<Record<string, any>> = [];
 
   while (true) {
+    if (maxPages && page > maxPages) break;
+
+    const controller = options?.timeoutMs ? new AbortController() : undefined;
+    const timeoutId = options?.timeoutMs
+      ? setTimeout(() => controller?.abort(), options.timeoutMs)
+      : undefined;
+
     const response = await fetch(
       wpApiUrl(creds, `/posts?per_page=${perPage}&page=${page}&status=publish&_fields=${fields}`),
-      { headers: { Authorization: authHeader(creds), "Content-Type": "application/json" } }
-    );
+      {
+        headers: { Authorization: authHeader(creds), "Content-Type": "application/json" },
+        signal: controller?.signal,
+      }
+    ).finally(() => {
+      if (timeoutId) clearTimeout(timeoutId);
+    });
     if (!response.ok) break;
     const posts = await response.json();
     if (!Array.isArray(posts) || posts.length === 0) break;
@@ -132,16 +153,98 @@ export async function fetchAllPosts(
 // Fetch a single post by ID
 export async function fetchPost(
   creds: WPCredentials,
-  postId: number
+  postId: number,
+  options?: WPRequestOptions
 ): Promise<Record<string, any>> {
-  const response = await fetch(wpApiUrl(creds, `/posts/${postId}`), {
-    headers: { Authorization: authHeader(creds), "Content-Type": "application/json" },
-  });
+  const controller = options?.timeoutMs ? new AbortController() : undefined;
+  const timeoutId = options?.timeoutMs
+    ? setTimeout(() => controller?.abort(), options.timeoutMs)
+    : undefined;
+
+  try {
+    const response = await fetch(wpApiUrl(creds, `/posts/${postId}`), {
+      headers: { Authorization: authHeader(creds), "Content-Type": "application/json" },
+      signal: controller?.signal,
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Failed to fetch post: ${response.status} ${body.substring(0, 200)}`);
+    }
+    return response.json();
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function fetchBySlugFromCollection(
+  creds: WPCredentials,
+  collection: "posts" | "pages",
+  slug: string,
+  options?: WPRequestOptions
+): Promise<Record<string, any> | null> {
+  const fields = "id,title,slug,link,content,status";
+  const controller = options?.timeoutMs ? new AbortController() : undefined;
+  const timeoutId = options?.timeoutMs
+    ? setTimeout(() => controller?.abort(), options.timeoutMs)
+    : undefined;
+
+  try {
+    const response = await fetch(
+      wpApiUrl(
+        creds,
+        `/${collection}?slug=${encodeURIComponent(slug)}&status=publish&_fields=${fields}`
+      ),
+      {
+        headers: { Authorization: authHeader(creds), "Content-Type": "application/json" },
+        signal: controller?.signal,
+      }
+    );
+
+    if (!response.ok) return null;
+
+    const rows = await response.json();
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+    return rows[0];
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+export async function fetchPostOrPageBySlug(
+  creds: WPCredentials,
+  slug: string,
+  options?: WPRequestOptions
+): Promise<Record<string, any> | null> {
+  const post = await fetchBySlugFromCollection(creds, "posts", slug, options);
+  if (post) return post;
+  return fetchBySlugFromCollection(creds, "pages", slug, options);
+}
+
+export async function deletePost(
+  creds: WPCredentials,
+  postId: number,
+  options?: { force?: boolean; collection?: "posts" | "pages" }
+): Promise<void> {
+  const collection = options?.collection || "posts";
+  const force = options?.force ?? true;
+  const response = await fetch(
+    wpApiUrl(
+      creds,
+      `/${collection}/${postId}${force ? "?force=true" : ""}`
+    ),
+    {
+      method: "DELETE",
+      headers: { Authorization: authHeader(creds), "Content-Type": "application/json" },
+    }
+  );
+
+  // Already removed in WordPress; treat as successful desired state.
+  if (response.status === 404) return;
+
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Failed to fetch post: ${response.status} ${body.substring(0, 200)}`);
+    throw new Error(`Failed to delete post: ${response.status} ${body.substring(0, 200)}`);
   }
-  return response.json();
 }
 
 // Update an existing post

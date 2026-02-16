@@ -1,0 +1,17 @@
+<svg width="640" height="420" viewBox="0 0 640 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="c" x1="0" y1="0" x2="640" y2="420" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFC780" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#FFF1DF" stop-opacity="0.45"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="420" rx="28" fill="#FFF9F2"/>
+  <rect x="14" y="14" width="612" height="392" rx="20" fill="url(#c)" stroke="#EDC38A" stroke-opacity="0.6"/>
+  <circle cx="188" cy="212" r="74" fill="#FFE5C4" stroke="#D9A86A" stroke-width="3"/>
+  <rect x="276" y="154" width="224" height="20" rx="9" fill="#EFAE62"/>
+  <rect x="276" y="188" width="186" height="12" rx="6" fill="#F4BF7E"/>
+  <rect x="276" y="210" width="210" height="12" rx="6" fill="#F4BF7E"/>
+  <rect x="276" y="232" width="160" height="12" rx="6" fill="#F4BF7E"/>
+  <text x="42" y="62" fill="#9B5F1D" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700">Placeholder Shot 03</text>
+  <text x="42" y="96" fill="#B8762D" font-family="Inter, Arial, sans-serif" font-size="18">Social proof / use case visual</text>
+</svg>

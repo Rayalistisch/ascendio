@@ -1,0 +1,16 @@
+<svg width="640" height="420" viewBox="0 0 640 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="a" x1="0" y1="0" x2="640" y2="420" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5DA7FF" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#E4F0FF" stop-opacity="0.35"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="420" rx="28" fill="#F8FBFF"/>
+  <rect x="14" y="14" width="612" height="392" rx="20" fill="url(#a)" stroke="#9DC2F5" stroke-opacity="0.6"/>
+  <path d="M122 288C174 196 233 177 289 221C348 267 406 271 520 171" stroke="#4D8FE0" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="122" cy="288" r="12" fill="#245EAE"/>
+  <circle cx="289" cy="221" r="12" fill="#245EAE"/>
+  <circle cx="520" cy="171" r="12" fill="#245EAE"/>
+  <text x="42" y="62" fill="#1C4E97" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700">Placeholder Shot 01</text>
+  <text x="42" y="96" fill="#2D6ABF" font-family="Inter, Arial, sans-serif" font-size="18">Vervang later met eigen screenshot of stock image</text>
+</svg>

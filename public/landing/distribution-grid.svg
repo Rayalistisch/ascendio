@@ -1,0 +1,21 @@
+<svg width="840" height="520" viewBox="0 0 840 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g3" x1="0" y1="0" x2="840" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#112F2A"/>
+      <stop offset="1" stop-color="#0B1F29"/>
+    </linearGradient>
+  </defs>
+  <rect width="840" height="520" rx="26" fill="url(#g3)"/>
+  <rect x="62" y="74" width="230" height="154" rx="18" fill="#143A30" stroke="#9AEBC1" stroke-opacity="0.55"/>
+  <rect x="306" y="74" width="230" height="154" rx="18" fill="#15353B" stroke="#93EAEC" stroke-opacity="0.55"/>
+  <rect x="550" y="74" width="230" height="154" rx="18" fill="#3B2A1F" stroke="#F8C793" stroke-opacity="0.55"/>
+  <text x="86" y="117" fill="#D7FFEA" font-family="ui-monospace, monospace" font-size="16">WORDPRESS</text>
+  <text x="330" y="117" fill="#D6FBFC" font-family="ui-monospace, monospace" font-size="16">SOCIAL QUEUE</text>
+  <text x="574" y="117" fill="#FFE8D1" font-family="ui-monospace, monospace" font-size="16">INDEXING</text>
+  <path d="M176 228V282" stroke="#C5FFF1" stroke-width="2" stroke-dasharray="5 5"/>
+  <path d="M420 228V282" stroke="#C5FFF1" stroke-width="2" stroke-dasharray="5 5"/>
+  <path d="M664 228V282" stroke="#C5FFF1" stroke-width="2" stroke-dasharray="5 5"/>
+  <rect x="62" y="290" width="718" height="154" rx="18" fill="#0F2630" stroke="#7DE2E4" stroke-opacity="0.35"/>
+  <text x="89" y="338" fill="#D7F9FB" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700">1 run, meerdere outputs</text>
+  <text x="89" y="374" fill="#BBEAF0" font-family="Inter, Arial, sans-serif" font-size="19">Publicatie, promotie en indexering worden georkestreerd na elke succesvolle generatie.</text>
+</svg>

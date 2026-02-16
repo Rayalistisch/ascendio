@@ -1,0 +1,21 @@
+<svg width="840" height="520" viewBox="0 0 840 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="840" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0E3137"/>
+      <stop offset="1" stop-color="#0A1F24"/>
+    </linearGradient>
+  </defs>
+  <rect width="840" height="520" rx="26" fill="url(#g1)"/>
+  <rect x="56" y="72" width="210" height="120" rx="16" fill="#0E444F" stroke="#5BE3E6" stroke-opacity="0.6"/>
+  <rect x="312" y="72" width="210" height="120" rx="16" fill="#2F2B16" stroke="#F8C88C" stroke-opacity="0.55"/>
+  <rect x="568" y="72" width="210" height="120" rx="16" fill="#193629" stroke="#96E9BD" stroke-opacity="0.55"/>
+  <path d="M266 132H312" stroke="#A9F7F8" stroke-width="2" stroke-dasharray="5 5"/>
+  <path d="M522 132H568" stroke="#A9F7F8" stroke-width="2" stroke-dasharray="5 5"/>
+  <rect x="56" y="248" width="722" height="206" rx="20" fill="#0F2B32" stroke="#79DEE0" stroke-opacity="0.35"/>
+  <text x="80" y="112" fill="#D8FCFD" font-family="ui-monospace, monospace" font-size="18">RSS SOURCES</text>
+  <text x="336" y="112" fill="#FFE9D3" font-family="ui-monospace, monospace" font-size="18">NEWS SOURCES</text>
+  <text x="592" y="112" fill="#D6FFE8" font-family="ui-monospace, monospace" font-size="18">KEYWORDS</text>
+  <text x="88" y="286" fill="#D4F7FA" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="700">Unified Source Map</text>
+  <text x="88" y="324" fill="#BDEBF0" font-family="Inter, Arial, sans-serif" font-size="19">Alle input wordt samengevoegd, ontdubbeld en als context</text>
+  <text x="88" y="352" fill="#BDEBF0" font-family="Inter, Arial, sans-serif" font-size="19">klaargezet voor de volgende generatie-run.</text>
+</svg>

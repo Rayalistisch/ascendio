@@ -75,6 +75,7 @@ export default function ClustersPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [loading, setLoading] = useState(true);
+  const [templateSavingClusterId, setTemplateSavingClusterId] = useState<string | null>(null);
 
   // Expanded cluster
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -135,14 +136,12 @@ export default function ClustersPage() {
     fetchTemplates();
   }, [fetchClusters, fetchTemplates]);
 
-  async function loadTopics(clusterId: string) {
-    if (expandedId === clusterId) {
-      setExpandedId(null);
-      return;
-    }
-    setExpandedId(clusterId);
+  useEffect(() => {
+    setNewTemplateId("");
+  }, [siteId]);
+
+  async function fetchTopics(clusterId: string) {
     setTopicsLoading(true);
-    setSuggestions([]);
     try {
       const res = await fetch(`/api/clusters/topics?clusterId=${clusterId}`);
       const data = await res.json();
@@ -150,6 +149,16 @@ export default function ClustersPage() {
     } finally {
       setTopicsLoading(false);
     }
+  }
+
+  async function loadTopics(clusterId: string) {
+    if (expandedId === clusterId) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(clusterId);
+    setSuggestions([]);
+    await fetchTopics(clusterId);
   }
 
   async function createCluster() {
@@ -182,13 +191,48 @@ export default function ClustersPage() {
   }
 
   async function deleteCluster(id: string) {
-    await fetch("/api/clusters", {
+    const confirmed = window.confirm(
+      "Weet je zeker dat je dit cluster wilt verwijderen? Gepubliceerde cluster-artikelen worden ook uit WordPress verwijderd."
+    );
+    if (!confirmed) return;
+
+    const res = await fetch("/api/clusters", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      window.alert(data.error || "Cluster verwijderen mislukt.");
+      return;
+    }
     if (expandedId === id) setExpandedId(null);
     fetchClusters();
+  }
+
+  async function updateClusterTemplate(clusterId: string, templateId: string) {
+    setTemplateSavingClusterId(clusterId);
+    try {
+      const res = await fetch("/api/clusters", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: clusterId,
+          templateId: templateId || null,
+        }),
+      });
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const updatedTemplateId = data.cluster?.template_id ?? null;
+      setClusters((prev) => prev.map((cluster) => (
+        cluster.id === clusterId
+          ? { ...cluster, template_id: updatedTemplateId }
+          : cluster
+      )));
+    } finally {
+      setTemplateSavingClusterId(null);
+    }
   }
 
   async function addTopic(clusterId: string) {
@@ -206,7 +250,7 @@ export default function ClustersPage() {
       });
       if (res.ok) {
         setNewTopicTitle("");
-        loadTopics(clusterId);
+        await fetchTopics(clusterId);
         fetchClusters();
       }
     } finally {
@@ -227,17 +271,27 @@ export default function ClustersPage() {
       }),
     });
     setSuggestions((prev) => prev.filter((s) => s.title !== suggestion.title));
-    loadTopics(clusterId);
+    await fetchTopics(clusterId);
     fetchClusters();
   }
 
   async function deleteTopic(topicId: string, clusterId: string) {
-    await fetch("/api/clusters/topics", {
+    const confirmed = window.confirm(
+      "Weet je zeker dat je dit subtopic wilt verwijderen? Als er al een artikel is gepubliceerd, wordt die ook uit WordPress verwijderd."
+    );
+    if (!confirmed) return;
+
+    const res = await fetch("/api/clusters/topics", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: topicId }),
     });
-    loadTopics(clusterId);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      window.alert(data.error || "Subtopic verwijderen mislukt.");
+      return;
+    }
+    await fetchTopics(clusterId);
     fetchClusters();
   }
 
@@ -249,6 +303,7 @@ export default function ClustersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           siteId: cluster.site_id,
+          clusterId: cluster.id,
           pillarTopic: cluster.pillar_topic,
           existingTopics: topics.map((t) => t.title),
         }),
@@ -270,12 +325,15 @@ export default function ClustersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clusterId }),
       });
-      loadTopics(clusterId);
+      if (expandedId !== clusterId) setExpandedId(clusterId);
+      await fetchTopics(clusterId);
       fetchClusters();
     } finally {
       setGenerating(false);
     }
   }
+
+  const retryableTopicCount = topics.filter((t) => t.status === "pending" || t.status === "failed").length;
 
   return (
     <div className="space-y-6">
@@ -319,17 +377,26 @@ export default function ClustersPage() {
                   <Label>Pillar zoekwoorden</Label>
                   <KeywordInput keywords={newKeywords} onChange={setNewKeywords} />
                 </div>
-                {templates.length > 0 && (
-                  <div className="space-y-2">
-                    <Label>Artikeltemplate</Label>
-                    <NativeSelect value={newTemplateId} onChange={(e) => setNewTemplateId(e.target.value)}>
-                      <option value="">Standaard structuur</option>
-                      {templates.map((t) => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                      ))}
-                    </NativeSelect>
-                  </div>
-                )}
+                <div className="space-y-2">
+                  <Label>Artikeltemplate</Label>
+                  <NativeSelect
+                    value={newTemplateId}
+                    onChange={(e) => setNewTemplateId(e.target.value)}
+                    disabled={templates.length === 0}
+                  >
+                    <option value="">
+                      {templates.length === 0 ? "Nog geen templates beschikbaar" : "Standaard structuur"}
+                    </option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </NativeSelect>
+                  {templates.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Maak eerst een template aan op de Templates-pagina om deze aan een cluster te koppelen.
+                    </p>
+                  )}
+                </div>
                 <Button onClick={createCluster} disabled={creating || !newName.trim() || !newPillar.trim()} className="w-full">
                   {creating ? "Aanmaken..." : "Cluster aanmaken"}
                 </Button>
@@ -353,12 +420,12 @@ export default function ClustersPage() {
         <div className="space-y-3">
           {clusters.map((cluster) => (
             <div key={cluster.id} className="rounded-xl border bg-card shadow-sm">
-              <button
-                type="button"
-                onClick={() => loadTopics(cluster.id)}
-                className="w-full text-left p-4"
-              >
-                <div className="flex items-center justify-between">
+              <div className="flex items-start justify-between p-4 gap-2">
+                <button
+                  type="button"
+                  onClick={() => loadTopics(cluster.id)}
+                  className="flex-1 text-left"
+                >
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-semibold">{cluster.name}</span>
@@ -373,14 +440,15 @@ export default function ClustersPage() {
                       {cluster.published_count}/{cluster.topic_count} artikelen gepubliceerd
                       {cluster.pillar_wp_post_url && " + pillar"}
                     </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Template: {templates.find((t) => t.id === cluster.template_id)?.name ?? "Standaard structuur"}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    <Button variant="ghost" size="sm" onClick={() => deleteCluster(cluster.id)} className="text-destructive">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </button>
+                </button>
+                <Button variant="ghost" size="sm" onClick={() => deleteCluster(cluster.id)} className="text-destructive shrink-0">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
 
               {expandedId === cluster.id && (
                 <div className="border-t px-4 py-3 space-y-4">
@@ -388,6 +456,30 @@ export default function ClustersPage() {
                     <Skeleton className="h-8 w-full" />
                   ) : (
                     <>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold">Template voor dit cluster</Label>
+                        <NativeSelect
+                          value={cluster.template_id ?? ""}
+                          onChange={(e) => updateClusterTemplate(cluster.id, e.target.value)}
+                          disabled={templateSavingClusterId === cluster.id || templates.length === 0}
+                          className="w-full sm:w-80"
+                        >
+                          <option value="">
+                            {templates.length === 0 ? "Nog geen templates beschikbaar" : "Standaard structuur"}
+                          </option>
+                          {templates.map((t) => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </NativeSelect>
+                        {templates.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">
+                            Maak eerst een template aan op de Templates-pagina om te koppelen.
+                          </p>
+                        ) : templateSavingClusterId === cluster.id ? (
+                          <p className="text-xs text-muted-foreground">Template opslaan...</p>
+                        ) : null}
+                      </div>
+
                       {/* Topics list */}
                       {topics.length > 0 ? (
                         <div className="space-y-2">
@@ -408,10 +500,13 @@ export default function ClustersPage() {
                               </div>
                               <div className="flex items-center gap-1 shrink-0">
                                 {topic.wp_post_url && (
-                                  <a href={topic.wp_post_url} target="_blank" rel="noopener noreferrer">
-                                    <Button variant="ghost" size="sm">
-                                      <ExternalLink className="h-4 w-4" />
-                                    </Button>
+                                  <a
+                                    href={topic.wp_post_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground"
+                                  >
+                                    <ExternalLink className="h-4 w-4" />
                                   </a>
                                 )}
                                 <Button variant="ghost" size="sm" onClick={() => deleteTopic(topic.id, cluster.id)} className="text-destructive">
@@ -463,10 +558,10 @@ export default function ClustersPage() {
                           <Sparkles className="h-4 w-4 mr-1" />
                           {suggesting ? "Laden..." : "AI Suggesties"}
                         </Button>
-                        {topics.filter((t) => t.status === "pending").length > 0 && (
+                        {retryableTopicCount > 0 && (
                           <Button size="sm" onClick={() => generateArticles(cluster.id)} disabled={generating}>
                             <Play className="h-4 w-4 mr-1" />
-                            {generating ? "Starten..." : `Genereer ${topics.filter((t) => t.status === "pending").length} artikelen`}
+                            {generating ? "Starten..." : `Genereer ${retryableTopicCount} artikelen`}
                           </Button>
                         )}
                       </div>

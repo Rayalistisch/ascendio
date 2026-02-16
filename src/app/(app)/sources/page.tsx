@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +63,9 @@ function formatDate(d: string | null) {
 }
 
 export default function SourcesPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [sites, setSites] = useState<Site[]>([]);
   const [siteId, setSiteId] = useState("");
   const [sources, setSources] = useState<ContentSource[]>([]);
@@ -77,14 +81,28 @@ export default function SourcesPage() {
   const [newConfig, setNewConfig] = useState("");
   const [creating, setCreating] = useState(false);
 
+  function updateSiteInUrl(nextSiteId: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("siteId", nextSiteId);
+    router.replace(`${pathname}?${params.toString()}`);
+  }
+
   useEffect(() => {
     fetch("/api/sites")
       .then((r) => r.json())
       .then((d) => {
-        const list = d.sites ?? [];
+        const list: Site[] = d.sites ?? [];
         setSites(list);
-        if (list.length > 0) setSiteId(list[0].id);
+        if (list.length === 0) return;
+        const siteFromUrl = searchParams.get("siteId");
+        if (siteFromUrl && list.some((site) => site.id === siteFromUrl)) {
+          setSiteId(siteFromUrl);
+          return;
+        }
+        setSiteId(list[0].id);
+        updateSiteInUrl(list[0].id);
       });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchSources = useCallback(async () => {
@@ -162,6 +180,11 @@ export default function SourcesPage() {
     fetchSources();
   }
 
+  function handleSiteChange(nextSiteId: string) {
+    setSiteId(nextSiteId);
+    updateSiteInUrl(nextSiteId);
+  }
+
   const configPlaceholder: Record<string, string> = {
     rss: "https://voorbeeld.nl/feed.xml",
     keywords: "keyword1, keyword2, keyword3",
@@ -180,7 +203,7 @@ export default function SourcesPage() {
         </div>
         <div className="flex items-center gap-3">
           {sites.length > 1 && (
-            <NativeSelect value={siteId} onChange={(e) => setSiteId(e.target.value)} className="w-48">
+            <NativeSelect value={siteId} onChange={(e) => handleSiteChange(e.target.value)} className="w-48">
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}

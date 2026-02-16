@@ -1,0 +1,53 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1920" y2="1080" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7FAFF"/>
+      <stop offset="0.45" stop-color="#ECF4FF"/>
+      <stop offset="1" stop-color="#E7FFF9"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="880" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B2345"/>
+      <stop offset="1" stop-color="#0D3A58"/>
+    </linearGradient>
+    <clipPath id="c1"><rect x="112" y="292" width="536" height="300" rx="22"/></clipPath>
+    <clipPath id="c2"><rect x="692" y="292" width="536" height="300" rx="22"/></clipPath>
+    <clipPath id="c3"><rect x="1272" y="292" width="536" height="300" rx="22"/></clipPath>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <circle cx="1708" cy="126" r="220" fill="#D7EDFF"/>
+  <circle cx="196" cy="932" r="188" fill="#D1FFF3"/>
+
+  <rect x="84" y="128" width="1752" height="824" rx="36" fill="#FFFFFF" stroke="#D7E4F3" stroke-width="2"/>
+
+  <text x="136" y="218" fill="#1D355C" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="700">ASCENDIO</text>
+  <text x="136" y="272" fill="#0C294D" font-family="Inter, Arial, sans-serif" font-size="92" font-weight="800">COMING SOON</text>
+  <text x="136" y="326" fill="#325E8A" font-family="Inter, Arial, sans-serif" font-size="30">Nieuwe generatie AI content operations voor WordPress teams.</text>
+
+  <rect x="112" y="292" width="536" height="300" rx="22" fill="#F3F9FF" stroke="#BCD4F2"/>
+  <rect x="692" y="292" width="536" height="300" rx="22" fill="#F1FFFC" stroke="#BFE7DE"/>
+  <rect x="1272" y="292" width="536" height="300" rx="22" fill="#FFF8EF" stroke="#EBD1AD"/>
+
+  <!-- Replace these 3 image href values with your own files later -->
+  <g clip-path="url(#c1)">
+    <image href="/landing/coming-soon-shot-1.svg" x="112" y="292" width="536" height="300" preserveAspectRatio="xMidYMid slice"/>
+  </g>
+  <g clip-path="url(#c2)">
+    <image href="/landing/coming-soon-shot-2.svg" x="692" y="292" width="536" height="300" preserveAspectRatio="xMidYMid slice"/>
+  </g>
+  <g clip-path="url(#c3)">
+    <image href="/landing/coming-soon-shot-3.svg" x="1272" y="292" width="536" height="300" preserveAspectRatio="xMidYMid slice"/>
+  </g>
+
+  <rect x="112" y="628" width="1696" height="212" rx="24" fill="url(#panel)"/>
+  <text x="156" y="700" fill="#D8EBFF" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="600">Wat je kunt verwachten</text>
+  <text x="156" y="744" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="44" font-weight="700">Research, generatie, SEO en distributie in 1 georkestreerde workflow.</text>
+
+  <rect x="156" y="774" width="286" height="44" rx="12" fill="#1D77FF"/>
+  <text x="186" y="803" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="600">launch. ascendio.app</text>
+
+  <rect x="476" y="774" width="286" height="44" rx="12" fill="#17BFA9"/>
+  <text x="503" y="803" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="600">/waitlist open</text>
+
+  <text x="1746" y="1012" text-anchor="end" fill="#5E7EA0" font-family="Inter, Arial, sans-serif" font-size="18">Template by Ascendio</text>
+</svg>

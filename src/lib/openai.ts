@@ -120,6 +120,7 @@ export interface EnhancedArticleRequest {
   sourceContent?: string;
   sourceTitle?: string;
   existingPosts?: { slug: string; title: string }[];
+  styleReferences?: { title: string; textSample: string }[];
   siteBaseUrl?: string;
   targetKeywords?: string[];
   structureTemplate?: { sections: StructureTemplateSection[] };
@@ -141,6 +142,107 @@ export interface EnhancedArticle {
   faqItems: { question: string; answer: string }[];
   imageMarkers: string[];
   youtubeMarkers: string[];
+}
+
+export interface ClusterSuggestionContext {
+  pillarDescription?: string;
+  pillarKeywords?: string[];
+  pillarContent?: string;
+  pillarContentTitle?: string;
+}
+
+interface InternalLinkCandidate {
+  url: string;
+  title: string;
+  ref: string;
+}
+
+function normalizeUrlForCompare(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, "").toLowerCase();
+  } catch {
+    return url.replace(/\/+$/, "").toLowerCase();
+  }
+}
+
+function extractHrefValues(html: string): string[] {
+  const matches = html.matchAll(/href\s*=\s*["']([^"']+)["']/gi);
+  return Array.from(matches, (m) => m[1]);
+}
+
+function htmlHasHref(html: string, targetUrl: string): boolean {
+  const target = normalizeUrlForCompare(targetUrl);
+  return extractHrefValues(html).some((href) => normalizeUrlForCompare(href) === target);
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function buildClusterLinkCandidates(req: EnhancedArticleRequest): InternalLinkCandidate[] {
+  if (!req.clusterContext) return [];
+
+  const siteBaseUrl = req.siteBaseUrl?.replace(/\/+$/, "");
+  const candidates: InternalLinkCandidate[] = [];
+  const ctx = req.clusterContext;
+
+  if (!ctx.isPillarArticle && ctx.pillarUrl) {
+    candidates.push({
+      url: ctx.pillarUrl,
+      title: ctx.pillarTopic,
+      ref: ctx.pillarUrl,
+    });
+  }
+
+  for (const article of ctx.siblingArticles) {
+    const resolvedUrl = article.url || (siteBaseUrl && article.slug ? `${siteBaseUrl}/${article.slug}` : "");
+    if (!resolvedUrl) continue;
+    candidates.push({
+      url: resolvedUrl,
+      title: article.title,
+      ref: article.slug || resolvedUrl,
+    });
+  }
+
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = normalizeUrlForCompare(candidate.url);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function ensureClusterInternalLinks(
+  htmlContent: string,
+  req: EnhancedArticleRequest
+): { htmlContent: string; addedRefs: string[] } {
+  const candidates = buildClusterLinkCandidates(req);
+  if (candidates.length === 0) return { htmlContent, addedRefs: [] };
+
+  const missing = candidates.filter((candidate) => !htmlHasHref(htmlContent, candidate.url));
+  if (missing.length === 0) return { htmlContent, addedRefs: [] };
+
+  const heading = req.clusterContext?.isPillarArticle
+    ? "Cluster artikelen"
+    : "Gerelateerde cluster artikelen";
+  const listItems = missing
+    .map((candidate) => `<li><a href="${candidate.url}">${escapeHtml(candidate.title)}</a></li>`)
+    .join("");
+
+  const separator = htmlContent.trim() ? "\n" : "";
+  const linkedHtml = `${htmlContent}${separator}<h2 id="gerelateerde-cluster-artikelen">${heading}</h2><ul>${listItems}</ul>`;
+
+  return {
+    htmlContent: linkedHtml,
+    addedRefs: missing.map((candidate) => candidate.ref),
+  };
 }
 
 // ===== NEW FUNCTIONS =====
@@ -261,6 +363,19 @@ export async function generateEnhancedArticle(
     externalLinksInstruction = `\n## EXTERNAL LINKS:\nGebruik bij voorkeur deze autoritieve bronnen:\n${domainList}\nInclude 3-5 externe links totaal. Use target="_blank" rel="noopener noreferrer".`;
   }
 
+  // Build writing style instruction from recent published posts
+  let styleInstruction = "";
+  if (req.styleReferences?.length) {
+    const styleSamples = req.styleReferences
+      .slice(0, 3)
+      .map((sample, index) => (
+        `\nVoorbeeld ${index + 1}:\nTitel: ${sample.title}\nFragment: "${sample.textSample}"`
+      ))
+      .join("\n");
+
+    styleInstruction = `\n## SCHRIJFSTIJL REFERENTIE (BELANGRIJK):\nGebruik deze recente site-fragmenten als stijlreferentie voor toon, ritme, woordkeuze en mate van formaliteit.${styleSamples}\nSchrijf nieuw en origineel; kopieer geen zinnen letterlijk.`;
+  }
+
   // Stage 2: Full enhanced article
   const articleResponse = await client.chat.completions.create({
     model: "gpt-4o",
@@ -294,6 +409,7 @@ Insert exactly 1-2 YouTube search markers:
 <!-- YOUTUBE:search query to find a relevant tutorial or explainer video -->
 ${internalLinksInstruction}
 ${externalLinksInstruction}
+${styleInstruction}
 
 ## FAQ SECTION:
 End with a FAQ section containing 3-5 relevant questions and concise answers.
@@ -324,6 +440,15 @@ Return ONLY a JSON object with:
   const articleData = JSON.parse(
     articleResponse.choices[0].message.content || "{}"
   );
+  const originalHtmlContent =
+    typeof articleData.htmlContent === "string" ? articleData.htmlContent : "";
+  const linkEnforcement = ensureClusterInternalLinks(originalHtmlContent, req);
+  const modelLinksUsed = Array.isArray(articleData.internalLinksUsed)
+    ? articleData.internalLinksUsed
+    : [];
+  const internalLinksUsed = Array.from(
+    new Set([...modelLinksUsed, ...linkEnforcement.addedRefs])
+  );
 
   // Generate Article schema markup
   const schemaMarkup = {
@@ -353,9 +478,9 @@ Return ONLY a JSON object with:
     topic,
     title,
     metaDescription: articleData.metaDescription,
-    htmlContent: articleData.htmlContent,
+    htmlContent: linkEnforcement.htmlContent,
     tableOfContents: articleData.tableOfContents || [],
-    internalLinksUsed: articleData.internalLinksUsed || [],
+    internalLinksUsed,
     externalLinksUsed: articleData.externalLinksUsed || [],
     schemaMarkup: faqSchema ? [schemaMarkup, faqSchema] : schemaMarkup,
     faqItems: articleData.faqItems || [],
@@ -598,11 +723,21 @@ export async function generateSchemaMarkup(
 export async function suggestClusterTopics(
   pillarTopic: string,
   language: string = "Dutch",
-  existingTopics?: string[]
+  existingTopics?: string[],
+  context?: ClusterSuggestionContext
 ): Promise<Array<{ title: string; description: string; keywords: string[] }>> {
   const client = getClient();
   const existingNote = existingTopics?.length
     ? `\nBestaande subtopics (suggereer deze NIET opnieuw): ${existingTopics.join(", ")}`
+    : "";
+  const descriptionNote = context?.pillarDescription?.trim()
+    ? `\nPillar beschrijving: "${context.pillarDescription.trim()}"`
+    : "";
+  const keywordNote = context?.pillarKeywords?.length
+    ? `\nPillar zoekwoorden: ${context.pillarKeywords.join(", ")}`
+    : "";
+  const contentNote = context?.pillarContent?.trim()
+    ? `\nPillar content excerpt${context.pillarContentTitle ? ` (${context.pillarContentTitle})` : ""}: "${context.pillarContent.substring(0, 2500)}"`
     : "";
 
   const response = await client.chat.completions.create({
@@ -611,11 +746,11 @@ export async function suggestClusterTopics(
     messages: [
       {
         role: "system",
-        content: `You are an SEO topic cluster strategist. Given a pillar topic, suggest 5-8 supporting subtopics that would form an effective SEO topic cluster. Each subtopic should be specific enough for a standalone article but clearly related to the pillar. Respond in ${language}. Return ONLY a JSON object with: { "suggestions": [{ "title": "...", "description": "brief description", "keywords": ["kw1", "kw2"] }] }`,
+        content: `You are an SEO topic cluster strategist. Given a pillar topic (and optional pillar context), suggest 5-8 supporting subtopics that would form an effective SEO topic cluster. Use the provided context to avoid overlap with the pillar page and to cover missing user intents. Each subtopic should be specific enough for a standalone article but clearly related to the pillar. Respond in ${language}. Return ONLY a JSON object with: { "suggestions": [{ "title": "...", "description": "brief description", "keywords": ["kw1", "kw2"] }] }`,
       },
       {
         role: "user",
-        content: `Pillar topic: "${pillarTopic}"${existingNote}\n\nSuggest supporting subtopics for this SEO cluster.`,
+        content: `Pillar topic: "${pillarTopic}"${existingNote}${descriptionNote}${keywordNote}${contentNote}\n\nSuggest supporting subtopics for this SEO cluster.`,
       },
     ],
     response_format: { type: "json_object" },

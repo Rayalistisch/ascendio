@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { decrypt } from "@/lib/encryption";
+import { deletePost } from "@/lib/wordpress";
 
 export async function GET(request: Request) {
   const supabase = await createClient();
@@ -95,6 +97,71 @@ export async function DELETE(request: Request) {
   const body = await request.json();
   const { id } = body;
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+
+  const { data: topic, error: topicError } = await supabase
+    .from("asc_cluster_topics")
+    .select("id, cluster_id, wp_post_id")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+
+  if (topicError || !topic) {
+    return NextResponse.json({ error: "Topic not found" }, { status: 404 });
+  }
+
+  const { data: cluster } = await supabase
+    .from("asc_clusters")
+    .select("site_id")
+    .eq("id", topic.cluster_id)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!cluster) return NextResponse.json({ error: "Cluster not found" }, { status: 404 });
+
+  if (topic.wp_post_id) {
+    const { data: site } = await supabase
+      .from("asc_sites")
+      .select("wp_base_url, wp_username, wp_app_password_encrypted")
+      .eq("id", cluster.site_id)
+      .eq("user_id", user.id)
+      .single();
+
+    if (!site?.wp_base_url || !site?.wp_username || !site?.wp_app_password_encrypted) {
+      return NextResponse.json(
+        { error: "WordPress credentials ontbreken; kan clusterpagina niet verwijderen." },
+        { status: 400 }
+      );
+    }
+
+    try {
+      await deletePost(
+        {
+          baseUrl: site.wp_base_url,
+          username: site.wp_username,
+          appPassword: decrypt(site.wp_app_password_encrypted),
+        },
+        topic.wp_post_id,
+        { force: true }
+      );
+    } catch (err) {
+      return NextResponse.json(
+        {
+          error:
+            err instanceof Error
+              ? err.message
+              : "WordPress post verwijderen mislukt",
+        },
+        { status: 502 }
+      );
+    }
+
+    await supabase
+      .from("asc_wp_posts")
+      .delete()
+      .eq("site_id", cluster.site_id)
+      .eq("user_id", user.id)
+      .eq("wp_post_id", topic.wp_post_id);
+  }
 
   const { error } = await supabase
     .from("asc_cluster_topics")

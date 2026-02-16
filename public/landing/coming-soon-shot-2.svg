@@ -1,0 +1,17 @@
+<svg width="640" height="420" viewBox="0 0 640 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="b" x1="0" y1="0" x2="640" y2="420" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4BE5D8" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#D5FFFA" stop-opacity="0.4"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="420" rx="28" fill="#F5FFFD"/>
+  <rect x="14" y="14" width="612" height="392" rx="20" fill="url(#b)" stroke="#82DACF" stroke-opacity="0.6"/>
+  <rect x="72" y="106" width="496" height="210" rx="16" fill="#E9FFFB" stroke="#55BFB2" stroke-width="3"/>
+  <rect x="106" y="142" width="192" height="24" rx="8" fill="#6FD5C8"/>
+  <rect x="106" y="184" width="420" height="12" rx="6" fill="#8AE6DB"/>
+  <rect x="106" y="208" width="360" height="12" rx="6" fill="#8AE6DB"/>
+  <rect x="106" y="232" width="398" height="12" rx="6" fill="#8AE6DB"/>
+  <text x="42" y="62" fill="#11796E" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700">Placeholder Shot 02</text>
+  <text x="42" y="96" fill="#158A7E" font-family="Inter, Arial, sans-serif" font-size="18">Product UI / dashboard visual</text>
+</svg>

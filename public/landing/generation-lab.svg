@@ -1,0 +1,16 @@
+<svg width="840" height="520" viewBox="0 0 840 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g2" x1="0" y1="0" x2="840" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2B1E12"/>
+      <stop offset="1" stop-color="#101F25"/>
+    </linearGradient>
+  </defs>
+  <rect width="840" height="520" rx="26" fill="url(#g2)"/>
+  <rect x="70" y="70" width="700" height="96" rx="14" fill="#3A271A" stroke="#F7C28A" stroke-opacity="0.55"/>
+  <rect x="70" y="190" width="700" height="96" rx="14" fill="#112E36" stroke="#7FE5E7" stroke-opacity="0.45"/>
+  <rect x="70" y="310" width="700" height="140" rx="14" fill="#152D22" stroke="#91E7BB" stroke-opacity="0.45"/>
+  <text x="98" y="126" fill="#FFE6CF" font-family="Inter, Arial, sans-serif" font-size="23" font-weight="700">Article Generation</text>
+  <text x="98" y="246" fill="#D7FAFB" font-family="Inter, Arial, sans-serif" font-size="23" font-weight="700">SEO Structuring</text>
+  <text x="98" y="366" fill="#D7FFE8" font-family="Inter, Arial, sans-serif" font-size="23" font-weight="700">Visual Enrichment</text>
+  <text x="98" y="397" fill="#C3EEDF" font-family="Inter, Arial, sans-serif" font-size="18">Featured image, in-article assets en alt-text in dezelfde pipeline.</text>
+</svg>

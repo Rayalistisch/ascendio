@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { decrypt } from "@/lib/encryption";
+import { deletePost } from "@/lib/wordpress";
 
 export async function GET(request: Request) {
   const supabase = await createClient();
@@ -109,6 +111,83 @@ export async function DELETE(request: Request) {
   const body = await request.json();
   const { id } = body;
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+
+  const { data: cluster, error: clusterError } = await supabase
+    .from("asc_clusters")
+    .select("id, site_id, pillar_wp_post_id")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+
+  if (clusterError || !cluster) {
+    return NextResponse.json({ error: "Cluster not found" }, { status: 404 });
+  }
+
+  const { data: clusterTopics } = await supabase
+    .from("asc_cluster_topics")
+    .select("wp_post_id")
+    .eq("cluster_id", id)
+    .eq("user_id", user.id);
+
+  const wpPostIds = Array.from(
+    new Set(
+      [cluster.pillar_wp_post_id, ...(clusterTopics ?? []).map((topic) => topic.wp_post_id)]
+        .filter((postId): postId is number => typeof postId === "number")
+    )
+  );
+
+  if (wpPostIds.length > 0) {
+    const { data: site } = await supabase
+      .from("asc_sites")
+      .select("wp_base_url, wp_username, wp_app_password_encrypted")
+      .eq("id", cluster.site_id)
+      .eq("user_id", user.id)
+      .single();
+
+    if (!site?.wp_base_url || !site?.wp_username || !site?.wp_app_password_encrypted) {
+      return NextResponse.json(
+        { error: "WordPress credentials ontbreken; kan clusterpagina's niet verwijderen." },
+        { status: 400 }
+      );
+    }
+
+    const creds = {
+      baseUrl: site.wp_base_url,
+      username: site.wp_username,
+      appPassword: decrypt(site.wp_app_password_encrypted),
+    };
+
+    const wpDeletionResults = await Promise.allSettled(
+      wpPostIds.map((postId) => deletePost(creds, postId, { force: true }))
+    );
+
+    const failedDeletions = wpDeletionResults
+      .map((result, index) => ({
+        postId: wpPostIds[index],
+        ok: result.status === "fulfilled",
+        error: result.status === "rejected"
+          ? (result.reason instanceof Error ? result.reason.message : String(result.reason))
+          : null,
+      }))
+      .filter((result) => !result.ok);
+
+    if (failedDeletions.length > 0) {
+      return NextResponse.json(
+        {
+          error: "Niet alle WordPress clusterpagina's konden worden verwijderd.",
+          failed: failedDeletions,
+        },
+        { status: 502 }
+      );
+    }
+
+    await supabase
+      .from("asc_wp_posts")
+      .delete()
+      .eq("site_id", cluster.site_id)
+      .eq("user_id", user.id)
+      .in("wp_post_id", wpPostIds);
+  }
 
   const { error } = await supabase
     .from("asc_clusters")

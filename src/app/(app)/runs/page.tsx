@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -116,6 +117,7 @@ function LoadingSkeleton() {
 export default function RunsPage() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
 
   const fetchRuns = useCallback(async () => {
@@ -141,13 +143,67 @@ export default function RunsPage() {
     setExpandedRunId((prev) => (prev === runId ? null : runId));
   }
 
+  async function cleanupRuns() {
+    const cleanupCandidates = runs.filter(
+      (run) => run.status === "failed" || run.status === "running"
+    );
+    if (cleanupCandidates.length === 0) return;
+
+    const confirmed = window.confirm(
+      `Weet je zeker dat je ${cleanupCandidates.length} mislukte/actieve runs wilt verwijderen?`
+    );
+    if (!confirmed) return;
+
+    setCleanupLoading(true);
+    try {
+      const res = await fetch("/api/runs", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ statuses: ["failed", "running"] }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        window.alert(data.error || "Runs opschonen mislukt.");
+        return;
+      }
+
+      const data = await res.json().catch(() => ({}));
+      const deletedCount = typeof data.deleted === "number" ? data.deleted : 0;
+
+      setExpandedRunId(null);
+      await fetchRuns();
+
+      if (deletedCount > 0) {
+        window.alert(`${deletedCount} runs verwijderd.`);
+      }
+    } finally {
+      setCleanupLoading(false);
+    }
+  }
+
+  const cleanupCandidatesCount = runs.filter(
+    (run) => run.status === "failed" || run.status === "running"
+  ).length;
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Runs</h1>
-        <p className="text-muted-foreground mt-1">
-          Geschiedenis van alle AI-publicaties.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Runs</h1>
+          <p className="text-muted-foreground mt-1">
+            Geschiedenis van alle AI-publicaties.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={cleanupRuns}
+          disabled={loading || cleanupLoading || cleanupCandidatesCount === 0}
+        >
+          {cleanupLoading
+            ? "Opschonen..."
+            : `Opschonen (${cleanupCandidatesCount})`}
+        </Button>
       </div>
 
       {loading ? (

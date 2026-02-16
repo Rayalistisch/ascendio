@@ -12,7 +12,9 @@ export async function POST(request: Request) {
   if (!valid) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
 
   const { sourceId, siteId, userId } = JSON.parse(rawBody);
-  if (!sourceId) return NextResponse.json({ error: "Missing sourceId" }, { status: 400 });
+  if (!sourceId || !siteId || !userId) {
+    return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
+  }
 
   const supabase = createAdminClient();
 
@@ -20,6 +22,8 @@ export async function POST(request: Request) {
     .from("asc_content_sources")
     .select("*")
     .eq("id", sourceId)
+    .eq("site_id", siteId)
+    .eq("user_id", userId)
     .single();
 
   if (!source) return NextResponse.json({ error: "Source not found" }, { status: 404 });
@@ -76,7 +80,8 @@ export async function POST(request: Request) {
     await supabase
       .from("asc_content_sources")
       .update({ last_fetched_at: new Date().toISOString() })
-      .eq("id", sourceId);
+      .eq("id", sourceId)
+      .eq("user_id", userId);
 
     return NextResponse.json({ success: true, itemsProcessed: items.length });
   } catch (err) {

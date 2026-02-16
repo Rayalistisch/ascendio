@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -131,6 +132,9 @@ const PRESETS: { name: string; sections: TemplateSection[] }[] = [
 ];
 
 export default function TemplatesPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [sites, setSites] = useState<Site[]>([]);
   const [siteId, setSiteId] = useState("");
   const [templates, setTemplates] = useState<ArticleTemplate[]>([]);
@@ -145,14 +149,28 @@ export default function TemplatesPage() {
   const [sections, setSections] = useState<TemplateSection[]>([createEmptySection()]);
   const [saving, setSaving] = useState(false);
 
+  function updateSiteInUrl(nextSiteId: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("siteId", nextSiteId);
+    router.replace(`${pathname}?${params.toString()}`);
+  }
+
   useEffect(() => {
     fetch("/api/sites")
       .then((r) => r.json())
       .then((d) => {
-        const list = d.sites ?? [];
+        const list: Site[] = d.sites ?? [];
         setSites(list);
-        if (list.length > 0) setSiteId(list[0].id);
+        if (list.length === 0) return;
+        const siteFromUrl = searchParams.get("siteId");
+        if (siteFromUrl && list.some((site) => site.id === siteFromUrl)) {
+          setSiteId(siteFromUrl);
+          return;
+        }
+        setSiteId(list[0].id);
+        updateSiteInUrl(list[0].id);
       });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchTemplates = useCallback(async () => {
@@ -251,6 +269,11 @@ export default function TemplatesPage() {
     setSections((prev) => [...prev, createEmptySection(type)]);
   }
 
+  function handleSiteChange(nextSiteId: string) {
+    setSiteId(nextSiteId);
+    updateSiteInUrl(nextSiteId);
+  }
+
   const sectionTypeMeta = SECTION_TYPES;
 
   return (
@@ -264,7 +287,7 @@ export default function TemplatesPage() {
         </div>
         <div className="flex items-center gap-3">
           {sites.length > 1 && (
-            <NativeSelect value={siteId} onChange={(e) => setSiteId(e.target.value)} className="w-48">
+            <NativeSelect value={siteId} onChange={(e) => handleSiteChange(e.target.value)} className="w-48">
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}

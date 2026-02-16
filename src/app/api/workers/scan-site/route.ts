@@ -15,10 +15,27 @@ export async function POST(request: Request) {
   }
 
   const { reportId, siteId, userId } = JSON.parse(rawBody);
+  if (!reportId || !siteId || !userId) {
+    return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
+  }
   const supabase = createAdminClient();
 
   try {
-    const { data: site } = await supabase.from("asc_sites").select("*").eq("id", siteId).single();
+    const { data: report } = await supabase
+      .from("asc_scan_reports")
+      .select("id, site_id, user_id")
+      .eq("id", reportId)
+      .eq("user_id", userId)
+      .single();
+    if (!report) throw new Error("Report not found");
+    if (report.site_id !== siteId) throw new Error("Report/site mismatch");
+
+    const { data: site } = await supabase
+      .from("asc_sites")
+      .select("*")
+      .eq("id", siteId)
+      .eq("user_id", userId)
+      .single();
     if (!site) throw new Error("Site not found");
 
     const creds = { baseUrl: site.wp_base_url, username: site.wp_username, appPassword: decrypt(site.wp_app_password_encrypted) };
@@ -46,14 +63,14 @@ export async function POST(request: Request) {
       pages_scanned: result.pagesScanned,
       issues_found: result.issues.length,
       finished_at: new Date().toISOString(),
-    }).eq("id", reportId);
+    }).eq("id", reportId).eq("user_id", userId);
 
     return NextResponse.json({ success: true, pagesScanned: result.pagesScanned, issuesFound: result.issues.length });
   } catch (err) {
     await supabase.from("asc_scan_reports").update({
       status: "failed",
       finished_at: new Date().toISOString(),
-    }).eq("id", reportId);
+    }).eq("id", reportId).eq("user_id", userId);
     return NextResponse.json({ error: err instanceof Error ? err.message : "Scan failed" }, { status: 500 });
   }
 }

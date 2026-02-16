@@ -28,10 +28,10 @@ export async function POST(request: Request) {
   const allTopics = (cluster as any).asc_cluster_topics ?? [];
   const targetTopics = topicIds
     ? allTopics.filter((t: { id: string }) => topicIds.includes(t.id))
-    : allTopics.filter((t: { status: string }) => t.status === "pending");
+    : allTopics.filter((t: { status: string }) => t.status === "pending" || t.status === "failed");
 
   if (targetTopics.length === 0) {
-    return NextResponse.json({ error: "No pending topics to generate" }, { status: 400 });
+    return NextResponse.json({ error: "No pending or failed topics to generate" }, { status: 400 });
   }
 
   const results: { topicId: string; runId: string }[] = [];
@@ -53,23 +53,42 @@ export async function POST(request: Request) {
 
     if (runError || !run) continue;
 
-    // Update topic status
-    await supabase
-      .from("asc_cluster_topics")
-      .update({ status: "generating" })
-      .eq("id", topic.id);
+    try {
+      // Enqueue the job first; only then mark topic as generating.
+      await enqueueGenerateJob({
+        runId: run.id,
+        siteId: cluster.site_id,
+        userId: user.id,
+        clusterId,
+        clusterTopicId: topic.id,
+        templateId: cluster.template_id || undefined,
+      });
 
-    // Enqueue the job
-    await enqueueGenerateJob({
-      runId: run.id,
-      siteId: cluster.site_id,
-      userId: user.id,
-      clusterId,
-      clusterTopicId: topic.id,
-      templateId: cluster.template_id || undefined,
-    });
+      await supabase
+        .from("asc_cluster_topics")
+        .update({ status: "generating" })
+        .eq("id", topic.id);
 
-    results.push({ topicId: topic.id, runId: run.id });
+      results.push({ topicId: topic.id, runId: run.id });
+    } catch (jobErr) {
+      const errorMessage = jobErr instanceof Error ? jobErr.message : "Queueing failed";
+      await supabase
+        .from("asc_runs")
+        .update({
+          status: "failed",
+          error_message: errorMessage,
+          finished_at: new Date().toISOString(),
+        })
+        .eq("id", run.id);
+      await supabase
+        .from("asc_cluster_topics")
+        .update({ status: "failed" })
+        .eq("id", topic.id);
+    }
+  }
+
+  if (results.length === 0) {
+    return NextResponse.json({ error: "No jobs could be queued" }, { status: 500 });
   }
 
   // Update cluster status

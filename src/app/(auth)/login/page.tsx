@@ -1,12 +1,19 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
+  const searchParams = useSearchParams();
+  const mode = searchParams.get("mode");
+  const loggedOut = searchParams.get("logged_out") === "1";
+  const billingBypass = process.env.NEXT_PUBLIC_DEV_BILLING_BYPASS === "true";
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(mode === "signup");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -30,7 +37,7 @@ export default function LoginPage() {
       if (error) {
         setError(error.message);
       } else {
-        setMessage("Controleer je e-mail om je account te bevestigen.");
+        setMessage("Controleer je e-mail en rond daarna je betaalde plan af op de billing-pagina.");
       }
     } else {
       const { error } = await supabase.auth.signInWithPassword({
@@ -40,7 +47,7 @@ export default function LoginPage() {
       if (error) {
         setError(error.message);
       } else {
-        window.location.href = "/dashboard";
+        window.location.href = billingBypass ? "/dashboard" : "/billing";
       }
     }
 
@@ -53,8 +60,11 @@ export default function LoginPage() {
         <div className="text-center">
           <h1 className="text-3xl font-bold tracking-tight">Ascendio</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            AI-powered growth on autopilot.
+            Account + betaald plan vereist om de app te gebruiken.
           </p>
+          {loggedOut && (
+            <p className="mt-2 text-sm text-green-600">Je bent uitgelogd.</p>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-4">
@@ -95,13 +105,9 @@ export default function LoginPage() {
             />
           </div>
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
-          {message && (
-            <p className="text-sm text-green-600">{message}</p>
-          )}
+          {message && <p className="text-sm text-green-600">{message}</p>}
 
           <button
             type="submit"
@@ -129,6 +135,16 @@ export default function LoginPage() {
           >
             {isSignUp ? "Inloggen" : "Registreren"}
           </button>
+        </p>
+
+        <p className="text-center text-sm text-muted-foreground">
+          <Link href="/" className="underline-offset-4 hover:underline">
+            Terug naar landingspagina
+          </Link>
+          {" · "}
+          <Link href="/api/auth/signout" className="underline-offset-4 hover:underline">
+            Forceer uitloggen
+          </Link>
         </p>
       </div>
     </div>

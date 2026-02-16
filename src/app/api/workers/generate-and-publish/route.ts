@@ -24,9 +24,70 @@ import {
 } from "@/lib/qstash";
 
 export const maxDuration = 300; // 5 min for Vercel Pro
+const MIN_CACHED_POSTS_FOR_LINKING = 10;
+const BOOTSTRAP_SYNC_MAX_PAGES = 2;
+const BOOTSTRAP_SYNC_TIMEOUT_MS = 4000;
+const INLINE_IMAGE_CONCURRENCY = 2;
+const MAX_INLINE_IMAGES_PER_RUN = 1;
+const WORKER_SOFT_TIMEOUT_MS = 165000;
+const MIN_TIME_FOR_INLINE_IMAGES_MS = 60000;
+const MIN_TIME_FOR_YOUTUBE_MS = 35000;
+const FEATURED_IMAGE_TIMEOUT_MS = 45000;
+const FEATURED_ALT_TIMEOUT_MS = 12000;
+const INLINE_IMAGE_TIMEOUT_MS = 30000;
+const INLINE_ALT_TIMEOUT_MS = 10000;
+const YOUTUBE_SEARCH_TIMEOUT_MS = 8000;
+const STYLE_REFERENCE_POST_LOOKBACK = 12;
+const STYLE_REFERENCE_MAX_ITEMS = 3;
+const STYLE_REFERENCE_MAX_CHARS = 900;
+const STYLE_REFERENCE_MIN_CHARS = 120;
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncateAtWordBoundary(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const sliced = text.slice(0, maxChars);
+  const breakAt = sliced.lastIndexOf(" ");
+  if (breakAt > Math.floor(maxChars * 0.6)) {
+    return `${sliced.slice(0, breakAt).trim()}...`;
+  }
+  return `${sliced.trim()}...`;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`${label} timeout after ${timeoutMs}ms`)), timeoutMs);
+    promise
+      .then((value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+  });
+}
 
 export async function POST(request: Request) {
   const rawBody = await request.text();
+  const workerStartedAt = Date.now();
+  const remainingMs = () => WORKER_SOFT_TIMEOUT_MS - (Date.now() - workerStartedAt);
+  const hasTime = (requiredMs: number) => remainingMs() > requiredMs;
 
   // Verify QStash signature
   const signature = request.headers.get("upstash-signature");
@@ -44,11 +105,27 @@ export async function POST(request: Request) {
 
   const supabase = createAdminClient();
 
+  const { data: run } = await supabase
+    .from("asc_runs")
+    .select("id, site_id, user_id")
+    .eq("id", runId)
+    .eq("user_id", userId)
+    .single();
+
+  if (!run) {
+    return NextResponse.json({ error: "Run niet gevonden" }, { status: 404 });
+  }
+
+  if (run.site_id !== siteId) {
+    return NextResponse.json({ error: "Run/site mismatch" }, { status: 400 });
+  }
+
   // Mark run as running
   await supabase
     .from("asc_runs")
     .update({ status: "running", started_at: new Date().toISOString() })
-    .eq("id", runId);
+    .eq("id", runId)
+    .eq("user_id", userId);
 
   await logStep(supabase, runId, "info", "Run gestart");
 
@@ -58,6 +135,7 @@ export async function POST(request: Request) {
       .from("asc_sites")
       .select("*")
       .eq("id", siteId)
+      .eq("user_id", userId)
       .single();
 
     if (!site) throw new Error("Site niet gevonden");
@@ -74,43 +152,114 @@ export async function POST(request: Request) {
       site: site.name,
     });
 
-    // 2. Sync WP posts for internal linking
-    await logStep(supabase, runId, "info", "WordPress posts synchroniseren...");
+    // 2. Load cached posts for internal linking (fast path)
+    await logStep(supabase, runId, "info", "Interne links laden uit cache...");
     let existingPosts: { slug: string; title: string }[] = [];
     try {
-      const wpPosts = await fetchAllPosts(creds, {
-        fields: ["id", "title", "slug", "link", "excerpt", "status", "date", "modified"],
-      });
-      existingPosts = wpPosts.map((p) => ({
-        slug: p.slug,
-        title: typeof p.title === "object" ? p.title.rendered : p.title,
-      }));
+      const { data: cachedPosts } = await supabase
+        .from("asc_wp_posts")
+        .select("slug, title")
+        .eq("site_id", siteId)
+        .eq("user_id", userId)
+        .eq("status", "publish")
+        .order("last_synced_at", { ascending: false })
+        .limit(300);
 
-      // Cache posts in asc_wp_posts
-      for (const p of wpPosts) {
-        const postTitle = typeof p.title === "object" ? p.title.rendered : p.title;
-        const postExcerpt = typeof p.excerpt === "object" ? p.excerpt.rendered : p.excerpt;
-        await supabase.from("asc_wp_posts").upsert(
-          {
-            user_id: userId,
-            site_id: siteId,
-            wp_post_id: p.id,
-            title: postTitle || "",
-            slug: p.slug || "",
-            url: p.link || "",
-            excerpt: postExcerpt || "",
-            status: p.status || "publish",
-            last_synced_at: new Date().toISOString(),
-            wp_created_at: p.date,
-            wp_modified_at: p.modified,
-          },
-          { onConflict: "site_id,wp_post_id" }
-        );
+      existingPosts = (cachedPosts ?? [])
+        .filter((p) => p.slug && p.title)
+        .map((p) => ({ slug: p.slug, title: p.title }));
+
+      await logStep(supabase, runId, "info", `${existingPosts.length} interne link-kandidaten uit cache geladen`);
+
+      // Bootstrap a small sync only when cache is too small.
+      if (existingPosts.length < MIN_CACHED_POSTS_FOR_LINKING) {
+        await logStep(supabase, runId, "info", "Cache beperkt, beperkte WP sync uitvoeren...");
+        const wpPosts = await fetchAllPosts(creds, {
+          fields: ["id", "title", "slug", "link", "excerpt", "status", "date", "modified"],
+          maxPages: BOOTSTRAP_SYNC_MAX_PAGES,
+          timeoutMs: BOOTSTRAP_SYNC_TIMEOUT_MS,
+        });
+
+        if (wpPosts.length > 0) {
+          existingPosts = wpPosts
+            .filter((p) => p.slug)
+            .map((p) => ({
+              slug: p.slug,
+              title: typeof p.title === "object" ? p.title.rendered : p.title,
+            }));
+
+          const upsertRows = wpPosts.map((p) => {
+            const postTitle = typeof p.title === "object" ? p.title.rendered : p.title;
+            const postExcerpt = typeof p.excerpt === "object" ? p.excerpt.rendered : p.excerpt;
+            return {
+              user_id: userId,
+              site_id: siteId,
+              wp_post_id: p.id,
+              title: postTitle || "",
+              slug: p.slug || "",
+              url: p.link || "",
+              excerpt: postExcerpt || "",
+              status: p.status || "publish",
+              last_synced_at: new Date().toISOString(),
+              wp_created_at: p.date,
+              wp_modified_at: p.modified,
+            };
+          });
+
+          await supabase.from("asc_wp_posts").upsert(upsertRows, {
+            onConflict: "site_id,wp_post_id",
+          });
+          await logStep(supabase, runId, "info", `${wpPosts.length} posts beperkt gesynchroniseerd`);
+        }
       }
-
-      await logStep(supabase, runId, "info", `${wpPosts.length} posts gesynchroniseerd`);
     } catch (syncErr) {
-      await logStep(supabase, runId, "warn", "WP sync overgeslagen: " + (syncErr instanceof Error ? syncErr.message : "onbekend"));
+      await logStep(supabase, runId, "warn", "WP cache/sync overgeslagen: " + (syncErr instanceof Error ? syncErr.message : "onbekend"));
+    }
+
+    // 2.5. Load recent published content as writing style references
+    let styleReferences: { title: string; textSample: string }[] = [];
+    try {
+      const { data: recentPosts } = await supabase
+        .from("asc_wp_posts")
+        .select("title, content, excerpt")
+        .eq("site_id", siteId)
+        .eq("user_id", userId)
+        .eq("status", "publish")
+        .order("wp_modified_at", { ascending: false })
+        .order("last_synced_at", { ascending: false })
+        .limit(STYLE_REFERENCE_POST_LOOKBACK);
+
+      styleReferences = (recentPosts ?? [])
+        .map((p) => {
+          const rawText = p.content || p.excerpt || "";
+          const cleaned = stripHtml(rawText);
+          const sample = truncateAtWordBoundary(cleaned, STYLE_REFERENCE_MAX_CHARS);
+          return {
+            title: p.title || "",
+            textSample: sample,
+          };
+        })
+        .filter(
+          (sample) =>
+            Boolean(sample.title) &&
+            sample.textSample.length >= STYLE_REFERENCE_MIN_CHARS
+        )
+        .slice(0, STYLE_REFERENCE_MAX_ITEMS);
+
+      await logStep(
+        supabase,
+        runId,
+        "info",
+        `${styleReferences.length} stijlreferenties geladen uit recente artikelen`
+      );
+    } catch (styleErr) {
+      await logStep(
+        supabase,
+        runId,
+        "warn",
+        "Stijlreferenties overgeslagen: " +
+          (styleErr instanceof Error ? styleErr.message : "onbekend")
+      );
     }
 
     // 3. Select source item (if content sources are configured)
@@ -229,6 +378,7 @@ export async function POST(request: Request) {
       sourceContent,
       sourceTitle,
       existingPosts,
+      styleReferences,
       siteBaseUrl: site.wp_base_url.replace(/\/+$/, ""),
       structureTemplate,
       clusterContext,
@@ -249,7 +399,8 @@ export async function POST(request: Request) {
         internal_links_added: article.internalLinksUsed.length,
         external_links_added: article.externalLinksUsed.length,
       })
-      .eq("id", runId);
+      .eq("id", runId)
+      .eq("user_id", userId);
 
     await logStep(supabase, runId, "info", "Artikel gegenereerd", {
       title: article.title,
@@ -259,61 +410,143 @@ export async function POST(request: Request) {
     });
 
     // 5. Generate featured image
-    await logStep(supabase, runId, "info", "Uitgelichte afbeelding genereren...");
-    const imageBuffer = await generateFeaturedImage(article.topic, article.title);
-    const featuredAltText = await generateAltText(article.topic, article.title);
-
     const slug = article.title
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");
     const filename = `${slug}-featured.png`;
+    let media: { id: number; url: string } | null = null;
 
-    const media = await uploadMedia(creds, imageBuffer, filename);
-    await updateMedia(creds, media.id, { alt_text: featuredAltText });
-
-    await logStep(supabase, runId, "info", "Uitgelichte afbeelding geüpload", {
-      mediaId: media.id,
-    });
+    if (hasTime(MIN_TIME_FOR_INLINE_IMAGES_MS)) {
+      try {
+        await logStep(supabase, runId, "info", "Uitgelichte afbeelding genereren...");
+        const [imageBuffer, featuredAltText] = await Promise.all([
+          withTimeout(
+            generateFeaturedImage(article.topic, article.title),
+            FEATURED_IMAGE_TIMEOUT_MS,
+            "Featured image generation"
+          ),
+          withTimeout(
+            generateAltText(article.topic, article.title),
+            FEATURED_ALT_TIMEOUT_MS,
+            "Featured image alt text"
+          ),
+        ]);
+        media = await uploadMedia(creds, imageBuffer, filename);
+        await updateMedia(creds, media.id, { alt_text: featuredAltText });
+        await logStep(supabase, runId, "info", "Uitgelichte afbeelding geüpload", {
+          mediaId: media.id,
+        });
+      } catch (featuredErr) {
+        await logStep(
+          supabase,
+          runId,
+          "warn",
+          "Uitgelichte afbeelding overgeslagen: " +
+            (featuredErr instanceof Error ? featuredErr.message : "onbekend")
+        );
+      }
+    } else {
+      await logStep(supabase, runId, "warn", "Uitgelichte afbeelding overgeslagen wegens tijdslimiet");
+    }
 
     // 6. Replace image markers with in-article images
     let htmlContent = article.htmlContent;
-    let imagesCount = 1; // Start with 1 for featured image
+    let imagesCount = media ? 1 : 0;
+    const imageResults: Array<{ marker: string; html: string }> = [];
+    const markersToProcess = hasTime(MIN_TIME_FOR_INLINE_IMAGES_MS)
+      ? article.imageMarkers.slice(0, MAX_INLINE_IMAGES_PER_RUN)
+      : [];
 
+    if (article.imageMarkers.length > markersToProcess.length) {
+      await logStep(
+        supabase,
+        runId,
+        "warn",
+        `In-article afbeeldingen beperkt naar ${markersToProcess.length} wegens tijdslimiet`
+      );
+    }
+
+    for (let i = 0; i < markersToProcess.length; i += INLINE_IMAGE_CONCURRENCY) {
+      if (!hasTime(MIN_TIME_FOR_YOUTUBE_MS)) {
+        await logStep(supabase, runId, "warn", "In-article afbeeldingen vroegtijdig gestopt wegens tijdslimiet");
+        break;
+      }
+      const batch = markersToProcess.slice(i, i + INLINE_IMAGE_CONCURRENCY);
+      const batchResults = await Promise.all(
+        batch.map(async (marker, idx) => {
+          const markerIndex = i + idx + 1;
+          try {
+            await logStep(supabase, runId, "info", `In-article afbeelding genereren: ${marker.substring(0, 50)}...`);
+            const [inArticleBuffer, inArticleAlt] = await Promise.all([
+              withTimeout(
+                generateInArticleImage(
+                  article.topic,
+                  marker,
+                  article.htmlContent.substring(0, 500)
+                ),
+                INLINE_IMAGE_TIMEOUT_MS,
+                "Inline image generation"
+              ),
+              withTimeout(
+                generateAltText(marker, article.title),
+                INLINE_ALT_TIMEOUT_MS,
+                "Inline image alt text"
+              ),
+            ]);
+            const inArticleFilename = `${slug}-inline-${markerIndex}.png`;
+            const inArticleMedia = await uploadMedia(creds, inArticleBuffer, inArticleFilename);
+            await updateMedia(creds, inArticleMedia.id, { alt_text: inArticleAlt });
+
+            return {
+              marker,
+              html: `<figure class="wp-block-image"><img src="${inArticleMedia.url}" alt="${inArticleAlt}" /><figcaption>${marker}</figcaption></figure>`,
+            };
+          } catch (imgErr) {
+            await logStep(supabase, runId, "warn", `In-article afbeelding overgeslagen: ${imgErr instanceof Error ? imgErr.message : "onbekend"}`);
+            return {
+              marker,
+              html: "",
+            };
+          }
+        })
+      );
+
+      imageResults.push(...batchResults);
+    }
+
+    for (const result of imageResults) {
+      htmlContent = htmlContent.replace(`<!-- IMAGE:${result.marker} -->`, result.html);
+    }
     for (const marker of article.imageMarkers) {
-      try {
-        await logStep(supabase, runId, "info", `In-article afbeelding genereren: ${marker.substring(0, 50)}...`);
-        const inArticleBuffer = await generateInArticleImage(
-          article.topic,
-          marker,
-          article.htmlContent.substring(0, 500)
-        );
-        const inArticleAlt = await generateAltText(marker, article.title);
-        const inArticleFilename = `${slug}-inline-${imagesCount}.png`;
-        const inArticleMedia = await uploadMedia(creds, inArticleBuffer, inArticleFilename);
-        await updateMedia(creds, inArticleMedia.id, { alt_text: inArticleAlt });
-
-        htmlContent = htmlContent.replace(
-          `<!-- IMAGE:${marker} -->`,
-          `<figure class="wp-block-image"><img src="${inArticleMedia.url}" alt="${inArticleAlt}" /><figcaption>${marker}</figcaption></figure>`
-        );
-        imagesCount++;
-      } catch (imgErr) {
-        await logStep(supabase, runId, "warn", `In-article afbeelding overgeslagen: ${imgErr instanceof Error ? imgErr.message : "onbekend"}`);
+      if (!imageResults.some((result) => result.marker === marker)) {
         htmlContent = htmlContent.replace(`<!-- IMAGE:${marker} -->`, "");
       }
     }
 
+    imagesCount += imageResults.filter((r) => r.html).length;
+
     // 7. Replace YouTube markers with embeds
-    for (const query of article.youtubeMarkers) {
-      try {
-        const videos = await searchYouTubeVideos(query);
-        const videoHtml = videos.length > 0 ? videos[0].embedHtml : "";
-        htmlContent = htmlContent.replace(
-          `<!-- YOUTUBE:${query} -->`,
-          videoHtml
-        );
-      } catch {
+    if (hasTime(MIN_TIME_FOR_YOUTUBE_MS)) {
+      for (const query of article.youtubeMarkers) {
+        try {
+          const videos = await withTimeout(
+            searchYouTubeVideos(query),
+            YOUTUBE_SEARCH_TIMEOUT_MS,
+            "YouTube lookup"
+          );
+          const videoHtml = videos.length > 0 ? videos[0].embedHtml : "";
+          htmlContent = htmlContent.replace(
+            `<!-- YOUTUBE:${query} -->`,
+            videoHtml
+          );
+        } catch {
+          htmlContent = htmlContent.replace(`<!-- YOUTUBE:${query} -->`, "");
+        }
+      }
+    } else {
+      await logStep(supabase, runId, "warn", "YouTube embeds overgeslagen wegens tijdslimiet");
+      for (const query of article.youtubeMarkers) {
         htmlContent = htmlContent.replace(`<!-- YOUTUBE:${query} -->`, "");
       }
     }
@@ -336,7 +569,8 @@ export async function POST(request: Request) {
     await supabase
       .from("asc_runs")
       .update({ images_count: imagesCount })
-      .eq("id", runId);
+      .eq("id", runId)
+      .eq("user_id", userId);
 
     // 10. Publish post to WordPress
     await logStep(supabase, runId, "info", "Post publiceren op WordPress...");
@@ -344,7 +578,7 @@ export async function POST(request: Request) {
       title: article.title,
       content: htmlContent,
       excerpt: article.metaDescription,
-      featuredMediaId: media.id,
+      featuredMediaId: media?.id,
       status: "publish",
     });
 
@@ -363,6 +597,7 @@ export async function POST(request: Request) {
         slug,
         url: post.url,
         excerpt: article.metaDescription,
+        content: htmlContent,
         meta_description: article.metaDescription,
         schema_markup: article.schemaMarkup,
         status: "publish",
@@ -381,7 +616,8 @@ export async function POST(request: Request) {
         wp_post_url: post.url,
         finished_at: new Date().toISOString(),
       })
-      .eq("id", runId);
+      .eq("id", runId)
+      .eq("user_id", userId);
 
     // 12.5. Update cluster topic status if applicable
     if (clusterTopicId) {
@@ -441,7 +677,7 @@ export async function POST(request: Request) {
             wp_post_url: post.url,
             article_title: article.title,
             copy: socialCopy,
-            image_url: media.url,
+            image_url: media?.url || null,
             webhook_url: site.social_webhook_url,
             status: "pending",
           })
@@ -497,6 +733,13 @@ export async function POST(request: Request) {
 
     await logStep(supabase, runId, "error", `Run mislukt: ${errorMessage}`);
 
+    if (clusterTopicId) {
+      await supabase
+        .from("asc_cluster_topics")
+        .update({ status: "failed" })
+        .eq("id", clusterTopicId);
+    }
+
     await supabase
       .from("asc_runs")
       .update({
@@ -504,7 +747,8 @@ export async function POST(request: Request) {
         error_message: errorMessage,
         finished_at: new Date().toISOString(),
       })
-      .eq("id", runId);
+      .eq("id", runId)
+      .eq("user_id", userId);
 
     // Return 500 so QStash retries
     return NextResponse.json({ error: errorMessage }, { status: 500 });

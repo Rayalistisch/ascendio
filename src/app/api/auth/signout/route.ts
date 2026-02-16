@@ -1,0 +1,18 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+
+export async function GET(request: Request) {
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+
+  const { origin } = new URL(request.url);
+  return NextResponse.redirect(`${origin}/login?logged_out=1`);
+}
+
+export async function POST(request: Request) {
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+
+  const { origin } = new URL(request.url);
+  return NextResponse.json({ success: true, redirectTo: `${origin}/login?logged_out=1` });
+}

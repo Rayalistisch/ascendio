@@ -2,11 +2,15 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/encryption";
 import { deletePost } from "@/lib/wordpress";
+import { checkFeatureAccess } from "@/lib/billing";
 
 export async function GET(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const access = await checkFeatureAccess(supabase, user.id, "clusters");
+  if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Pro om clusters te gebruiken" }, { status: 403 });
 
   const { searchParams } = new URL(request.url);
   const clusterId = searchParams.get("clusterId");
@@ -27,6 +31,9 @@ export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const access = await checkFeatureAccess(supabase, user.id, "clusters");
+  if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Pro om clusters te gebruiken" }, { status: 403 });
 
   const body = await request.json();
   const { clusterId, title, description, targetKeywords, sortOrder } = body;
@@ -66,6 +73,9 @@ export async function PATCH(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const access = await checkFeatureAccess(supabase, user.id, "clusters");
+  if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Pro om clusters te gebruiken" }, { status: 403 });
+
   const body = await request.json();
   const { id, title, description, targetKeywords, sortOrder, status } = body;
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
@@ -94,6 +104,9 @@ export async function DELETE(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const access = await checkFeatureAccess(supabase, user.id, "clusters");
+  if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Pro om clusters te gebruiken" }, { status: 403 });
+
   const body = await request.json();
   const { id } = body;
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
@@ -111,7 +124,7 @@ export async function DELETE(request: Request) {
 
   const { data: cluster } = await supabase
     .from("asc_clusters")
-    .select("site_id")
+    .select("site_id, content_type")
     .eq("id", topic.cluster_id)
     .eq("user_id", user.id)
     .single();
@@ -141,7 +154,10 @@ export async function DELETE(request: Request) {
           appPassword: decrypt(site.wp_app_password_encrypted),
         },
         topic.wp_post_id,
-        { force: true }
+        {
+          force: true,
+          collection: cluster.content_type === "pages" ? "pages" : "posts",
+        }
       );
     } catch (err) {
       return NextResponse.json(

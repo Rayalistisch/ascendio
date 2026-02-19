@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { enqueueSocialPostJob } from "@/lib/qstash";
+import { checkFeatureAccess } from "@/lib/billing";
 
 export async function POST(request: Request, { params }: { params: Promise<{ postId: string }> }) {
   const { postId } = await params;
@@ -8,6 +9,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ pos
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const access = await checkFeatureAccess(supabase, user.id, "social");
+  if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Pro om social automation te gebruiken" }, { status: 403 });
 
   const { data: post } = await supabase
     .from("asc_social_posts")

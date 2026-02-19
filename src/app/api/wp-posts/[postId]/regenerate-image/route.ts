@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { generateFeaturedImage, generateAltText } from "@/lib/openai";
 import { uploadMedia, updateMedia, updatePost } from "@/lib/wordpress";
 import { decrypt } from "@/lib/encryption";
+import { checkCredits, deductCredits, CREDIT_COSTS } from "@/lib/credits";
 
 export async function POST(request: Request, { params }: { params: Promise<{ postId: string }> }) {
   const { postId } = await params;
@@ -10,6 +12,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ pos
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Credit pre-check
+  const adminSupabase = createAdminClient();
+  const creditCheck = await checkCredits(adminSupabase, user.id, CREDIT_COSTS.image_regeneration);
+  if (!creditCheck.enough) {
+    return NextResponse.json({ error: "Onvoldoende credits" }, { status: 402 });
+  }
 
   const { data: post } = await supabase
     .from("asc_wp_posts")
@@ -34,6 +43,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ pos
   await updatePost(creds, post.wp_post_id, { featured_media: media.id } as Record<string, unknown> as { title?: string });
 
   await supabase.from("asc_wp_posts").update({ featured_image_url: media.url }).eq("id", postId);
+
+  // Deduct credits after successful image regeneration
+  await deductCredits(adminSupabase, user.id, "image_regeneration", postId);
 
   return NextResponse.json({ imageUrl: media.url });
 }

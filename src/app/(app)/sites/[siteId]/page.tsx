@@ -8,7 +8,16 @@ import { Badge } from "@/components/ui/badge";
 import { NativeSelect } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Trash2, Plus } from "lucide-react";
+
+interface ToneOfVoice {
+  tone?: string;
+  targetAudience?: string;
+  avoidWords?: string[];
+  exampleSentences?: string[];
+  brandGuidelines?: string;
+}
 
 interface SiteInfo {
   id: string;
@@ -16,6 +25,7 @@ interface SiteInfo {
   wp_base_url: string;
   status: string;
   default_language: string;
+  tone_of_voice: ToneOfVoice | null;
 }
 
 interface PreferredDomain {
@@ -49,6 +59,15 @@ export default function SiteDetailPage() {
   // Templates
   const [templates, setTemplates] = useState<ArticleTemplate[]>([]);
 
+  // Tone of voice
+  const [tone, setTone] = useState("");
+  const [targetAudience, setTargetAudience] = useState("");
+  const [avoidWords, setAvoidWords] = useState("");
+  const [exampleSentences, setExampleSentences] = useState("");
+  const [brandGuidelines, setBrandGuidelines] = useState("");
+  const [savingTone, setSavingTone] = useState(false);
+  const [toneSaved, setToneSaved] = useState(false);
+
   useEffect(() => {
     async function loadSite() {
       try {
@@ -56,6 +75,14 @@ export default function SiteDetailPage() {
         const data = await res.json();
         const found = (data.sites ?? []).find((s: SiteInfo) => s.id === siteId);
         setSite(found || null);
+        if (found?.tone_of_voice) {
+          const tov = found.tone_of_voice;
+          setTone(tov.tone || "");
+          setTargetAudience(tov.targetAudience || "");
+          setAvoidWords((tov.avoidWords || []).join(", "));
+          setExampleSentences((tov.exampleSentences || []).join("\n"));
+          setBrandGuidelines(tov.brandGuidelines || "");
+        }
       } finally {
         setLoading(false);
       }
@@ -121,6 +148,34 @@ export default function SiteDetailPage() {
       body: JSON.stringify({ id: templateId, isDefault: true }),
     });
     fetchTemplates();
+  }
+
+  async function saveToneOfVoice() {
+    setSavingTone(true);
+    setToneSaved(false);
+    try {
+      const hasContent = tone || targetAudience || avoidWords || exampleSentences || brandGuidelines;
+      const toneOfVoice = hasContent
+        ? {
+            tone,
+            targetAudience,
+            avoidWords: avoidWords.split(",").map((w) => w.trim()).filter(Boolean),
+            exampleSentences: exampleSentences.split("\n").map((s) => s.trim()).filter(Boolean),
+            brandGuidelines,
+          }
+        : null;
+      const res = await fetch("/api/sites", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: siteId, toneOfVoice }),
+      });
+      if (res.ok) {
+        setToneSaved(true);
+        setTimeout(() => setToneSaved(false), 3000);
+      }
+    } finally {
+      setSavingTone(false);
+    }
   }
 
   if (loading) {
@@ -247,6 +302,74 @@ export default function SiteDetailPage() {
           <Button onClick={addDomain} disabled={addingDomain || !newDomain.trim()} size="sm">
             <Plus className="h-4 w-4 mr-1" /> Toevoegen
           </Button>
+        </div>
+      </div>
+
+      {/* Tone of Voice / Knowledge Base */}
+      <div className="rounded-xl border bg-card p-4 space-y-3">
+        <div>
+          <h2 className="font-semibold">Schrijfstijl & Tone of Voice</h2>
+          <p className="text-sm text-muted-foreground">
+            Configureer de schrijfstijl die de AI gebruikt bij het genereren en herschrijven van content voor deze site.
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <Label className="text-xs">Tone of Voice</Label>
+            <Input
+              value={tone}
+              onChange={(e) => setTone(e.target.value)}
+              placeholder="bijv. Professioneel maar toegankelijk, met een vleugje humor"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Doelgroep</Label>
+            <Input
+              value={targetAudience}
+              onChange={(e) => setTargetAudience(e.target.value)}
+              placeholder="bijv. MKB-ondernemers, 30-55 jaar, technisch onderlegd"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Vermijd deze woorden (kommagescheiden)</Label>
+            <Input
+              value={avoidWords}
+              onChange={(e) => setAvoidWords(e.target.value)}
+              placeholder="bijv. klik hier, uniek, snel, gratis"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Voorbeeldzinnen (een per regel)</Label>
+            <Textarea
+              value={exampleSentences}
+              onChange={(e) => setExampleSentences(e.target.value)}
+              placeholder="Schrijf 1-5 voorbeeldzinnen in de gewenste stijl..."
+              rows={4}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Merkrichtlijnen</Label>
+            <Textarea
+              value={brandGuidelines}
+              onChange={(e) => setBrandGuidelines(e.target.value)}
+              placeholder="bijv. Gebruik altijd 'u' in plaats van 'je'. Verwijs naar ons bedrijf als 'Team X'. Vermijd passieve zinnen."
+              rows={3}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button onClick={saveToneOfVoice} disabled={savingTone} size="sm">
+              {savingTone ? "Opslaan..." : "Schrijfstijl opslaan"}
+            </Button>
+            {toneSaved && (
+              <span className="text-sm text-green-600">Opgeslagen!</span>
+            )}
+          </div>
         </div>
       </div>
     </div>

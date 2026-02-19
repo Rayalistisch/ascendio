@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyQStashSignature } from "@/lib/qstash";
 import { decrypt } from "@/lib/encryption";
-import { fetchAllPosts } from "@/lib/wordpress";
+import { fetchAllSiteContent } from "@/lib/wordpress";
 import { scanSite } from "@/lib/site-scanner";
 
 export const maxDuration = 300;
@@ -39,8 +39,8 @@ export async function POST(request: Request) {
     if (!site) throw new Error("Site not found");
 
     const creds = { baseUrl: site.wp_base_url, username: site.wp_username, appPassword: decrypt(site.wp_app_password_encrypted) };
-    const posts = await fetchAllPosts(creds);
-    const result = await scanSite(posts);
+    const content = await fetchAllSiteContent(creds);
+    const result = await scanSite(content);
 
     for (const issue of result.issues) {
       await supabase.from("asc_scan_issues").insert({

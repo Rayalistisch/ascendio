@@ -1,3 +1,5 @@
+import type { GenerationSettings } from "@/lib/generation-settings";
+
 const QSTASH_URL = process.env.QSTASH_URL || "https://qstash.upstash.io";
 const QSTASH_TOKEN = process.env.QSTASH_TOKEN;
 
@@ -10,14 +12,27 @@ export async function enqueueGenerateJob(params: {
   clusterTopicId?: string;
   templateId?: string;
   retryCount?: number;
+  contentType?: string;
+  generationSettings?: GenerationSettings;
 }): Promise<{ messageId: string }> {
   return publishToQStash("/api/workers/generate-and-publish", params);
 }
 
 function getAppUrl(): string {
-  return process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+
+  if (process.env.APP_URL) {
+    return process.env.APP_URL;
+  }
+
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return process.env.NEXT_PUBLIC_APP_URL;
+  }
+
+  const localPort = process.env.PORT || "3000";
+  return `http://localhost:${localPort}`;
 }
 
 function isLocalAppUrl(url: string): boolean {

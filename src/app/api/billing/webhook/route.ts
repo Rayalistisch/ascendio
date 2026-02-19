@@ -127,5 +127,31 @@ export async function POST(request: Request) {
     }
   }
 
+  // Reset credits on billing cycle renewal
+  if (event.type === "invoice.paid") {
+    const invoice = object;
+    const subscriptionId = String(invoice.subscription || "");
+    const billingReason = String(invoice.billing_reason || "");
+
+    if (subscriptionId && billingReason === "subscription_cycle") {
+      const { data: existingSub } = await supabase
+        .from("asc_subscriptions")
+        .select("tier")
+        .eq("stripe_subscription_id", subscriptionId)
+        .maybeSingle();
+
+      if (existingSub) {
+        const tierDef = getTierById(existingSub.tier);
+        await supabase
+          .from("asc_subscriptions")
+          .update({
+            credits_remaining: tierDef?.includedCredits || 0,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("stripe_subscription_id", subscriptionId);
+      }
+    }
+  }
+
   return NextResponse.json({ received: true });
 }

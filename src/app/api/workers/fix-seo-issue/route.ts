@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyQStashSignature } from "@/lib/qstash";
 import { decrypt } from "@/lib/encryption";
-import { fetchPost, updatePost, updateMedia } from "@/lib/wordpress";
+import { fetchPage, fetchPost, updatePost, updateMedia } from "@/lib/wordpress";
 import { rewriteContentWithPrompt, generateAltText } from "@/lib/openai";
+import { checkCredits, deductCredits, CREDIT_COSTS } from "@/lib/credits";
+import { isIssueTypeAutoFixable } from "@/lib/seo-fix";
 
 export const maxDuration = 60;
 
@@ -39,9 +41,30 @@ export async function POST(request: Request) {
 
   const creds = { baseUrl: site.wp_base_url, username: site.wp_username, appPassword: decrypt(site.wp_app_password_encrypted) };
 
+  // Credit pre-check
+  const creditCheck = await checkCredits(supabase, userId, CREDIT_COSTS.seo_fix);
+  if (!creditCheck.enough) {
+    return NextResponse.json({ error: "Onvoldoende credits" }, { status: 402 });
+  }
+
   try {
     if (!issue.wp_post_id) throw new Error("No wp_post_id");
-    const wpPost = await fetchPost(creds, issue.wp_post_id);
+    if (!isIssueTypeAutoFixable(issue.issue_type)) {
+      return NextResponse.json({ error: "Issue type not auto-fixable" }, { status: 400 });
+    }
+
+    let wpPost: Record<string, any> | null = null;
+    let collection: "posts" | "pages" = "posts";
+
+    try {
+      wpPost = await fetchPost(creds, issue.wp_post_id);
+    } catch {
+      wpPost = await fetchPage(creds, issue.wp_post_id);
+      collection = "pages";
+    }
+
+    if (!wpPost) throw new Error("WordPress item niet gevonden");
+
     const content = typeof wpPost.content === "object" ? wpPost.content.rendered : wpPost.content;
     const title = typeof wpPost.title === "object" ? wpPost.title.rendered : wpPost.title;
 
@@ -59,8 +82,8 @@ export async function POST(request: Request) {
           thin_content: "Expand this content to at least 500 words while maintaining quality and relevance",
           heading_hierarchy: "Fix the heading hierarchy to use proper H2/H3 nesting without changing the meaning",
         };
-        const result = await rewriteContentWithPrompt(content, prompts[issue.issue_type]);
-        await updatePost(creds, issue.wp_post_id, { content: result.htmlContent });
+        const result = await rewriteContentWithPrompt(content, prompts[issue.issue_type], undefined, site.tone_of_voice ?? null);
+        await updatePost(creds, issue.wp_post_id, { content: result.htmlContent }, { collection });
         break;
       }
       default:
@@ -86,6 +109,9 @@ export async function POST(request: Request) {
         .eq("is_fixed", true);
       await supabase.from("asc_scan_reports").update({ issues_fixed: count || 0 }).eq("id", report.report_id);
     }
+
+    // Deduct credits after successful fix
+    await deductCredits(supabase, userId, "seo_fix", issueId);
 
     return NextResponse.json({ success: true });
   } catch (err) {

@@ -42,6 +42,8 @@ export default function ScannerPage() {
   const [reports, setReports] = useState<ScanReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/sites")
@@ -53,15 +55,26 @@ export default function ScannerPage() {
       });
   }, []);
 
-  const fetchReports = useCallback(async () => {
+  const fetchReports = useCallback(async (options?: { silent?: boolean }) => {
     if (!siteId) return;
-    setLoading(true);
+    if (!options?.silent) {
+      setLoading(true);
+    }
     try {
       const res = await fetch(`/api/scanner?siteId=${siteId}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Kon scans niet ophalen");
+      }
       const data = await res.json();
       setReports(data.reports ?? []);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kon scans niet ophalen");
     } finally {
-      setLoading(false);
+      if (!options?.silent) {
+        setLoading(false);
+      }
     }
   }, [siteId]);
 
@@ -69,17 +82,72 @@ export default function ScannerPage() {
     fetchReports();
   }, [fetchReports]);
 
+  useEffect(() => {
+    const hasRunningScan = reports.some((report) =>
+      report.status === "running" || report.status === "pending"
+    );
+
+    if (!hasRunningScan) return;
+
+    const pollId = setInterval(() => {
+      void fetchReports({ silent: true });
+    }, 5000);
+
+    return () => clearInterval(pollId);
+  }, [reports, fetchReports]);
+
   async function startScan() {
     setStarting(true);
+    setError(null);
     try {
       const res = await fetch("/api/scanner", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ siteId }),
       });
-      if (res.ok) fetchReports();
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        const message = data.error || "Scan starten mislukt";
+        setError(message);
+        window.alert(message);
+        await fetchReports({ silent: true });
+        return;
+      }
+
+      if (data.report) {
+        setReports((prev) => {
+          const exists = prev.some((report) => report.id === data.report.id);
+          if (exists) return prev;
+          return [data.report, ...prev];
+        });
+      }
+
+      await fetchReports({ silent: true });
     } finally {
       setStarting(false);
+    }
+  }
+
+  async function deleteReport(reportId: string) {
+    if (!window.confirm("Deze scan verwijderen?")) return;
+
+    setDeletingId(reportId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/scanner/${reportId}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        const message = data.error || "Scan verwijderen mislukt";
+        setError(message);
+        window.alert(message);
+        return;
+      }
+
+      setReports((prev) => prev.filter((report) => report.id !== reportId));
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -89,7 +157,8 @@ export default function ScannerPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Site Scanner</h1>
           <p className="text-muted-foreground mt-1">
-            Scan je WordPress-site op SEO-problemen en los ze automatisch op.
+            Scan je WordPress-site op SEO-problemen. Fixen doe je daarna handmatig per
+            issue of in bulk.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -105,6 +174,12 @@ export default function ScannerPage() {
           </Button>
         </div>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="space-y-3">
@@ -158,11 +233,27 @@ export default function ScannerPage() {
                       {formatDate(report.finished_at)}
                     </td>
                     <td className="px-4 py-3">
-                      {report.status === "completed" && (
-                        <Button variant="outline" size="sm" onClick={() => router.push(`/scanner/${report.id}`)}>
-                          Bekijken
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {report.status === "completed" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => router.push(`/scanner/${report.id}`)}
+                          >
+                            Bekijken
+                          </Button>
+                        )}
+                        {(report.status === "running" || report.status === "pending") && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteReport(report.id)}
+                            disabled={deletingId === report.id}
+                          >
+                            {deletingId === report.id ? "Verwijderen..." : "Verwijder"}
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { checkFeatureAccess } from "@/lib/billing";
 
 const ALLOWED_ROLES = new Set(["admin", "editor", "viewer"]);
 const ALLOWED_STATUSES = new Set(["invited", "active", "disabled"]);
@@ -34,6 +35,9 @@ export async function GET(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const access = await checkFeatureAccess(supabase, user.id, "team");
+  if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Business om teambeheer te gebruiken" }, { status: 403 });
+
   const { searchParams } = new URL(request.url);
   const siteId = searchParams.get("siteId");
   if (!siteId) return NextResponse.json({ error: "Missing siteId" }, { status: 400 });
@@ -60,6 +64,9 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const access = await checkFeatureAccess(supabase, user.id, "team");
+  if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Business om teambeheer te gebruiken" }, { status: 403 });
 
   const body = await request.json();
   const siteId = String(body.siteId || "");
@@ -119,6 +126,9 @@ export async function PATCH(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const access = await checkFeatureAccess(supabase, user.id, "team");
+  if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Business om teambeheer te gebruiken" }, { status: 403 });
+
   const body = await request.json();
   const id = String(body.id || "");
   const role = body.role !== undefined ? String(body.role) : undefined;
@@ -167,6 +177,9 @@ export async function DELETE(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const access = await checkFeatureAccess(supabase, user.id, "team");
+  if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Business om teambeheer te gebruiken" }, { status: 403 });
 
   const body = await request.json();
   const id = String(body.id || "");

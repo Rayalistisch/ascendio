@@ -14,17 +14,30 @@ export default async function AppLayout({
   } = await supabase.auth.getUser();
 
   if (!user) redirect("/login");
-  if (isDevBillingBypassEnabled()) return <AppShell user={user}>{children}</AppShell>;
 
+  // Always fetch subscription for credit display
   const { data: subscription } = await supabase
     .from("asc_subscriptions")
-    .select("status")
+    .select("status, tier, credits_remaining, credits_monthly")
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (!isActiveSubscriptionStatus(subscription?.status)) {
+  // Only enforce billing gate when bypass is off
+  if (!isDevBillingBypassEnabled() && !isActiveSubscriptionStatus(subscription?.status)) {
     redirect("/billing");
   }
 
-  return <AppShell user={user}>{children}</AppShell>;
+  return (
+    <AppShell
+      user={user}
+      subscription={subscription ? {
+        tier: subscription.tier ?? "starter",
+        status: subscription.status ?? "active",
+        creditsRemaining: subscription.credits_remaining ?? 0,
+        creditsMonthly: subscription.credits_monthly ?? 0,
+      } : null}
+    >
+      {children}
+    </AppShell>
+  );
 }

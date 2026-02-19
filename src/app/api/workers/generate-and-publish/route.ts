@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { decrypt } from "@/lib/encryption";
 import {
   generateEnhancedArticle,
+  humanizeArticleDraft,
   generateFeaturedImage,
   generateInArticleImage,
   generateAltText,
@@ -11,6 +12,7 @@ import {
 import {
   uploadMedia,
   createPost,
+  createPage,
   updateMedia,
   fetchAllPosts,
 } from "@/lib/wordpress";
@@ -22,13 +24,27 @@ import {
   enqueueSocialPostJob,
   enqueueIndexingJob,
 } from "@/lib/qstash";
+import { checkCredits, deductCredits, CREDIT_COSTS } from "@/lib/credits";
+import {
+  stripHtmlToPlainText,
+  findTopSimilarityMatches,
+  type SimilarityCandidate,
+} from "@/lib/content-uniqueness";
+import {
+  findExternalPlagiarismMatches,
+  type ExternalPlagiarismMatch,
+} from "@/lib/external-plagiarism";
+import {
+  normalizeGenerationSettings,
+  type GenerationSettings,
+} from "@/lib/generation-settings";
 
 export const maxDuration = 300; // 5 min for Vercel Pro
 const MIN_CACHED_POSTS_FOR_LINKING = 10;
 const BOOTSTRAP_SYNC_MAX_PAGES = 2;
 const BOOTSTRAP_SYNC_TIMEOUT_MS = 4000;
 const INLINE_IMAGE_CONCURRENCY = 2;
-const MAX_INLINE_IMAGES_PER_RUN = 1;
+const MAX_INLINE_IMAGES_PER_RUN_CAP = 3;
 const WORKER_SOFT_TIMEOUT_MS = 165000;
 const MIN_TIME_FOR_INLINE_IMAGES_MS = 60000;
 const MIN_TIME_FOR_YOUTUBE_MS = 35000;
@@ -41,6 +57,38 @@ const STYLE_REFERENCE_POST_LOOKBACK = 12;
 const STYLE_REFERENCE_MAX_ITEMS = 3;
 const STYLE_REFERENCE_MAX_CHARS = 900;
 const STYLE_REFERENCE_MIN_CHARS = 120;
+const UNIQUENESS_REFERENCE_MAX_ITEMS = 18;
+const UNIQUENESS_REFERENCE_MIN_CHARS = 220;
+const MIN_TIME_FOR_DUPLICATE_GUARD_MS = 25000;
+const DUPLICATE_GUARD_ENABLED =
+  (process.env.CONTENT_DUPLICATE_GUARD || "true").toLowerCase() !== "false";
+const DUPLICATE_EXTERNAL_CHECK_ENABLED =
+  (process.env.CONTENT_DUPLICATE_EXTERNAL_CHECK || "true").toLowerCase() !== "false";
+const HUMANIZER_MODE = (process.env.CONTENT_HUMANIZER_MODE || "auto").toLowerCase();
+
+function parseNumericEnv(name: string, fallback: number): number {
+  const value = process.env[name];
+  if (!value) return fallback;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+const DUPLICATE_HUMANIZER_TRIGGER_SCORE = parseNumericEnv(
+  "CONTENT_DUPLICATE_HUMANIZER_TRIGGER_SCORE",
+  55
+);
+const DUPLICATE_INTERNAL_BLOCK_SCORE = parseNumericEnv(
+  "CONTENT_DUPLICATE_INTERNAL_BLOCK_SCORE",
+  70
+);
+const DUPLICATE_EXTERNAL_BLOCK_SCORE = parseNumericEnv(
+  "CONTENT_DUPLICATE_EXTERNAL_BLOCK_SCORE",
+  72
+);
+const MAX_HUMANIZER_ATTEMPTS = Math.max(
+  0,
+  Math.floor(parseNumericEnv("CONTENT_HUMANIZER_MAX_ATTEMPTS", 2))
+);
 
 function stripHtml(html: string): string {
   return html
@@ -83,6 +131,84 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
   });
 }
 
+function sanitizeYouTubeMarker(value: string): string {
+  return value
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
+function canonicalizeYouTubeMarkers(html: string): string {
+  return html.replace(/<!--\s*YOUTUBE:([\s\S]*?)-->/gi, (_match, rawMarker) => {
+    const marker = sanitizeYouTubeMarker(String(rawMarker || ""));
+    return marker ? `<!-- YOUTUBE:${marker} -->` : "";
+  });
+}
+
+function extractYouTubeMarkers(html: string): string[] {
+  const matches = html.matchAll(/<!--\s*YOUTUBE:([\s\S]*?)-->/gi);
+  const seen = new Set<string>();
+  const markers: string[] = [];
+  for (const match of matches) {
+    const marker = sanitizeYouTubeMarker(match[1] || "");
+    if (!marker) continue;
+    const key = marker.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    markers.push(marker);
+  }
+  return markers;
+}
+
+function deriveFallbackYouTubeMarkers(
+  html: string,
+  title: string,
+  targetCount: number
+): string[] {
+  const headings = Array.from(html.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/gi))
+    .map((match) => sanitizeYouTubeMarker(stripHtml(match[1] || "")))
+    .filter(Boolean);
+
+  const derived: string[] = [];
+  const seen = new Set<string>();
+
+  for (const heading of headings) {
+    const query = `${heading} uitleg`;
+    const key = query.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    derived.push(query);
+    if (derived.length >= targetCount) return derived;
+  }
+
+  for (let i = derived.length; i < targetCount; i += 1) {
+    derived.push(`${sanitizeYouTubeMarker(title)} uitleg ${i + 1}`);
+  }
+
+  return derived;
+}
+
+function injectYouTubeMarkersAfterH2(html: string, markers: string[]): string {
+  if (markers.length === 0) return html;
+  let index = 0;
+  const withInjections = html.replace(/(<h2[^>]*>[\s\S]*?<\/h2>)/gi, (match) => {
+    if (index >= markers.length) return match;
+    const marker = markers[index];
+    index += 1;
+    return `${match}\n<!-- YOUTUBE:${marker} -->`;
+  });
+
+  if (index < markers.length) {
+    return `${withInjections}\n${markers
+      .slice(index)
+      .map((marker) => `<!-- YOUTUBE:${marker} -->`)
+      .join("\n")}`;
+  }
+
+  return withInjections;
+}
+
 export async function POST(request: Request) {
   const rawBody = await request.text();
   const workerStartedAt = Date.now();
@@ -97,7 +223,16 @@ export async function POST(request: Request) {
   }
 
   const body = JSON.parse(rawBody);
-  const { runId, siteId, userId, clusterId, clusterTopicId, templateId } = body;
+  const {
+    runId,
+    siteId,
+    userId,
+    clusterId,
+    clusterTopicId,
+    templateId,
+    contentType,
+    generationSettings,
+  } = body;
 
   if (!runId || !siteId || !userId) {
     return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
@@ -118,6 +253,37 @@ export async function POST(request: Request) {
 
   if (run.site_id !== siteId) {
     return NextResponse.json({ error: "Run/site mismatch" }, { status: 400 });
+  }
+
+  const payloadSettingsForPrecheck = generationSettings
+    ? normalizeGenerationSettings(generationSettings)
+    : null;
+  const requestedInlineImagesForPrecheck = payloadSettingsForPrecheck
+    ? Math.min(
+        MAX_INLINE_IMAGES_PER_RUN_CAP,
+        payloadSettingsForPrecheck.images.inlineImageCount
+      )
+    : MAX_INLINE_IMAGES_PER_RUN_CAP;
+  const precheckCost =
+    CREDIT_COSTS.blog_post_with_images +
+    requestedInlineImagesForPrecheck * CREDIT_COSTS.inline_image_generation;
+
+  // Credit pre-check (worst-case for this run including inline images)
+  const creditCheck = await checkCredits(supabase, userId, precheckCost);
+  if (!creditCheck.enough) {
+    await supabase.from("asc_runs").update({
+      status: "failed",
+      error_message: "Onvoldoende credits",
+      finished_at: new Date().toISOString(),
+    }).eq("id", runId).eq("user_id", userId);
+    return NextResponse.json(
+      {
+        error: "Onvoldoende credits",
+        required: precheckCost,
+        remaining: creditCheck.remaining,
+      },
+      { status: 402 }
+    );
   }
 
   // Mark run as running
@@ -216,18 +382,33 @@ export async function POST(request: Request) {
       await logStep(supabase, runId, "warn", "WP cache/sync overgeslagen: " + (syncErr instanceof Error ? syncErr.message : "onbekend"));
     }
 
-    // 2.5. Load recent published content as writing style references
+    // 2.1. Load sitemap URLs for enriching article generation
+    let sitemapUrls: Array<{ url: string; title?: string }> = [];
+    try {
+      const { data: sitemapData } = await supabase
+        .from("asc_sitemap_urls")
+        .select("url, title")
+        .eq("site_id", siteId)
+        .order("scraped_at", { ascending: false })
+        .limit(50);
+      sitemapUrls = (sitemapData ?? []).filter((s) => s.url);
+    } catch {
+      // Sitemap data is best-effort
+    }
+
+    // 2.5. Load recent published content as writing style references + uniqueness references
     let styleReferences: { title: string; textSample: string }[] = [];
+    let uniquenessReferences: SimilarityCandidate[] = [];
     try {
       const { data: recentPosts } = await supabase
         .from("asc_wp_posts")
-        .select("title, content, excerpt")
+        .select("title, content, excerpt, url")
         .eq("site_id", siteId)
         .eq("user_id", userId)
         .eq("status", "publish")
         .order("wp_modified_at", { ascending: false })
         .order("last_synced_at", { ascending: false })
-        .limit(STYLE_REFERENCE_POST_LOOKBACK);
+        .limit(Math.max(STYLE_REFERENCE_POST_LOOKBACK, UNIQUENESS_REFERENCE_MAX_ITEMS));
 
       styleReferences = (recentPosts ?? [])
         .map((p) => {
@@ -246,12 +427,37 @@ export async function POST(request: Request) {
         )
         .slice(0, STYLE_REFERENCE_MAX_ITEMS);
 
+      uniquenessReferences = (recentPosts ?? [])
+        .map((p) => {
+          const rawText = p.content || p.excerpt || "";
+          const cleaned = stripHtmlToPlainText(String(rawText || ""));
+          return {
+            title: String(p.title || ""),
+            url: String(p.url || ""),
+            text: cleaned,
+          };
+        })
+        .filter(
+          (item) =>
+            Boolean(item.title) &&
+            item.text.length >= UNIQUENESS_REFERENCE_MIN_CHARS
+        )
+        .slice(0, UNIQUENESS_REFERENCE_MAX_ITEMS);
+
       await logStep(
         supabase,
         runId,
         "info",
         `${styleReferences.length} stijlreferenties geladen uit recente artikelen`
       );
+      if (uniquenessReferences.length > 0) {
+        await logStep(
+          supabase,
+          runId,
+          "info",
+          `${uniquenessReferences.length} unieke contentreferenties geladen`
+        );
+      }
     } catch (styleErr) {
       await logStep(
         supabase,
@@ -284,6 +490,11 @@ export async function POST(request: Request) {
     let forcedTopic = undefined;
     let forcedTitle = undefined;
     let targetKeywords: string[] | undefined;
+    const payloadGenerationSettings: GenerationSettings | null = generationSettings
+      ? normalizeGenerationSettings(generationSettings)
+      : null;
+    let runGenerationSettings: GenerationSettings =
+      payloadGenerationSettings || normalizeGenerationSettings(undefined);
 
     // Load article template
     const effectiveTemplateId = templateId || undefined;
@@ -323,6 +534,12 @@ export async function POST(request: Request) {
         .single();
 
       if (cluster) {
+        if (!payloadGenerationSettings) {
+          runGenerationSettings = normalizeGenerationSettings(
+            cluster.generation_settings
+          );
+        }
+
         const { data: clusterTopics } = await supabase
           .from("asc_cluster_topics")
           .select("*")
@@ -363,6 +580,34 @@ export async function POST(request: Request) {
       }
     }
 
+    const mergedKeywords = Array.from(
+      new Set(
+        [
+          ...(targetKeywords || []),
+          ...runGenerationSettings.details.includeKeywords,
+          runGenerationSettings.details.focusKeyword || "",
+        ]
+          .map((keyword) => keyword.trim())
+          .filter(Boolean)
+      )
+    ).slice(0, 15);
+    targetKeywords = mergedKeywords.length > 0 ? mergedKeywords : undefined;
+
+    if (!forcedTopic && runGenerationSettings.details.focusKeyword) {
+      forcedTopic = runGenerationSettings.details.focusKeyword;
+    }
+
+    if (runGenerationSettings.knowledge.mode === "no_extra") {
+      sourceContent = undefined;
+      sourceTitle = undefined;
+      await logStep(
+        supabase,
+        runId,
+        "info",
+        "Knowledge mode: no_extra (externe broncontent uitgeschakeld)"
+      );
+    }
+
     // Load preferred external domains
     const { data: preferredDomains } = await supabase
       .from("asc_preferred_domains")
@@ -372,7 +617,7 @@ export async function POST(request: Request) {
 
     // 4. Generate enhanced article
     await logStep(supabase, runId, "info", "Artikel genereren via OpenAI...");
-    const article = await generateEnhancedArticle({
+    let article = await generateEnhancedArticle({
       niche: site.name,
       language,
       sourceContent,
@@ -386,7 +631,159 @@ export async function POST(request: Request) {
       forcedTopic,
       forcedTitle,
       targetKeywords,
+      existingSitemapUrls: sitemapUrls.length > 0 ? sitemapUrls : undefined,
+      toneOfVoice: site.tone_of_voice ?? null,
+      generationSettings: runGenerationSettings,
     });
+
+    const runUniquenessGuard = async (
+      candidateHtml: string
+    ): Promise<{
+      topInternalScore: number;
+      internalMatches: ReturnType<typeof findTopSimilarityMatches>;
+      topExternalScore: number;
+      externalMatches: ExternalPlagiarismMatch[];
+    }> => {
+      if (!DUPLICATE_GUARD_ENABLED || uniquenessReferences.length === 0) {
+        return {
+          topInternalScore: 0,
+          internalMatches: [],
+          topExternalScore: 0,
+          externalMatches: [],
+        };
+      }
+
+      const plainText = stripHtmlToPlainText(candidateHtml);
+      const internalMatches = findTopSimilarityMatches(
+        plainText,
+        uniquenessReferences,
+        1,
+        3
+      );
+      const topInternalScore = internalMatches[0]?.score || 0;
+
+      let externalMatches: ExternalPlagiarismMatch[] = [];
+      if (
+        DUPLICATE_EXTERNAL_CHECK_ENABLED &&
+        plainText.length >= UNIQUENESS_REFERENCE_MIN_CHARS &&
+        hasTime(MIN_TIME_FOR_DUPLICATE_GUARD_MS)
+      ) {
+        try {
+          const map = await findExternalPlagiarismMatches([
+            {
+              id: 1,
+              pageUrl: site.wp_base_url,
+              title: article.title,
+              textContent: plainText,
+            },
+          ]);
+          externalMatches = map.get(1) || [];
+        } catch {
+          externalMatches = [];
+        }
+      }
+      const topExternalScore = externalMatches[0]?.score || 0;
+
+      return {
+        topInternalScore,
+        internalMatches,
+        topExternalScore,
+        externalMatches,
+      };
+    };
+
+    let uniquenessCheck = await runUniquenessGuard(article.htmlContent);
+    if (DUPLICATE_GUARD_ENABLED && uniquenessReferences.length > 0) {
+      await logStep(supabase, runId, "info", "Duplicate guard score berekend", {
+        internalScore: uniquenessCheck.topInternalScore,
+        externalScore: uniquenessCheck.topExternalScore,
+      });
+    }
+
+    const humanizerEnabled = HUMANIZER_MODE !== "off";
+    const shouldTriggerHumanizer =
+      humanizerEnabled &&
+      (uniquenessCheck.topInternalScore >= DUPLICATE_HUMANIZER_TRIGGER_SCORE ||
+        uniquenessCheck.topExternalScore >= DUPLICATE_HUMANIZER_TRIGGER_SCORE);
+
+    if (shouldTriggerHumanizer && MAX_HUMANIZER_ATTEMPTS > 0) {
+      for (let attempt = 1; attempt <= MAX_HUMANIZER_ATTEMPTS; attempt++) {
+        await logStep(
+          supabase,
+          runId,
+          "warn",
+          `Humanizer pass ${attempt}/${MAX_HUMANIZER_ATTEMPTS} gestart vanwege overlap-risico`
+        );
+
+        const overlapSnippets = [
+          ...uniquenessCheck.internalMatches.map((m) => m.snippet),
+          ...uniquenessCheck.externalMatches.map((m) =>
+            (m.sourceSnippet || "").replace(/\s+/g, " ").trim()
+          ),
+        ].filter(Boolean);
+
+        const humanizedDraft = await humanizeArticleDraft({
+          language,
+          topic: article.topic,
+          title: article.title,
+          targetKeywords,
+          draft: {
+            metaDescription: article.metaDescription,
+            htmlContent: article.htmlContent,
+            tableOfContents: article.tableOfContents,
+            internalLinksUsed: article.internalLinksUsed,
+            externalLinksUsed: article.externalLinksUsed,
+            faqItems: article.faqItems,
+            imageMarkers: article.imageMarkers,
+            youtubeMarkers: article.youtubeMarkers,
+          },
+          avoidOverlapSnippets: overlapSnippets,
+          toneOfVoice: site.tone_of_voice ?? null,
+          mode: HUMANIZER_MODE === "aggressive" ? "aggressive" : "auto",
+        });
+
+        article = {
+          ...article,
+          ...humanizedDraft,
+          internalLinksUsed: Array.from(new Set(humanizedDraft.internalLinksUsed)),
+          externalLinksUsed: Array.from(new Set(humanizedDraft.externalLinksUsed)),
+        };
+
+        uniquenessCheck = await runUniquenessGuard(article.htmlContent);
+        await logStep(supabase, runId, "info", "Humanizer pass afgerond", {
+          attempt,
+          internalScore: uniquenessCheck.topInternalScore,
+          externalScore: uniquenessCheck.topExternalScore,
+        });
+
+        const stillHigh =
+          uniquenessCheck.topInternalScore >= DUPLICATE_HUMANIZER_TRIGGER_SCORE ||
+          uniquenessCheck.topExternalScore >= DUPLICATE_HUMANIZER_TRIGGER_SCORE;
+        if (!stillHigh) break;
+      }
+    }
+
+    if (
+      DUPLICATE_GUARD_ENABLED &&
+      (uniquenessCheck.topInternalScore >= DUPLICATE_INTERNAL_BLOCK_SCORE ||
+        uniquenessCheck.topExternalScore >= DUPLICATE_EXTERNAL_BLOCK_SCORE)
+    ) {
+      const internal = uniquenessCheck.internalMatches[0];
+      const external = uniquenessCheck.externalMatches[0];
+      const reasonParts: string[] = [];
+      if (uniquenessCheck.topInternalScore >= DUPLICATE_INTERNAL_BLOCK_SCORE && internal) {
+        reasonParts.push(
+          `interne overlap ${uniquenessCheck.topInternalScore}% met "${internal.title}"`
+        );
+      }
+      if (uniquenessCheck.topExternalScore >= DUPLICATE_EXTERNAL_BLOCK_SCORE && external) {
+        reasonParts.push(
+          `externe overlap ${uniquenessCheck.topExternalScore}% met ${external.sourceUrl}`
+        );
+      }
+      const reason = reasonParts.join(" + ") || "onvoldoende uniek";
+      throw new Error(`Publish geblokkeerd: duplicate-content risico te hoog (${reason})`);
+    }
 
     await supabase
       .from("asc_runs")
@@ -409,6 +806,17 @@ export async function POST(request: Request) {
       faqItems: article.faqItems.length,
     });
 
+    const featuredImageEnabled = runGenerationSettings.images.featuredEnabled;
+    const maxInlineImagesRequested = Math.min(
+      MAX_INLINE_IMAGES_PER_RUN_CAP,
+      runGenerationSettings.images.inlineImageCount
+    );
+    const youtubeEnabled = runGenerationSettings.images.youtubeEnabled;
+    const maxYoutubeEmbedsRequested = Math.min(
+      3,
+      runGenerationSettings.images.youtubeCount
+    );
+
     // 5. Generate featured image
     const slug = article.title
       .toLowerCase()
@@ -417,7 +825,7 @@ export async function POST(request: Request) {
     const filename = `${slug}-featured.png`;
     let media: { id: number; url: string } | null = null;
 
-    if (hasTime(MIN_TIME_FOR_INLINE_IMAGES_MS)) {
+    if (featuredImageEnabled && hasTime(MIN_TIME_FOR_INLINE_IMAGES_MS)) {
       try {
         await logStep(supabase, runId, "info", "Uitgelichte afbeelding genereren...");
         const [imageBuffer, featuredAltText] = await Promise.all([
@@ -446,6 +854,13 @@ export async function POST(request: Request) {
             (featuredErr instanceof Error ? featuredErr.message : "onbekend")
         );
       }
+    } else if (!featuredImageEnabled) {
+      await logStep(
+        supabase,
+        runId,
+        "info",
+        "Uitgelichte afbeelding overgeslagen volgens generation settings"
+      );
     } else {
       await logStep(supabase, runId, "warn", "Uitgelichte afbeelding overgeslagen wegens tijdslimiet");
     }
@@ -455,7 +870,7 @@ export async function POST(request: Request) {
     let imagesCount = media ? 1 : 0;
     const imageResults: Array<{ marker: string; html: string }> = [];
     const markersToProcess = hasTime(MIN_TIME_FOR_INLINE_IMAGES_MS)
-      ? article.imageMarkers.slice(0, MAX_INLINE_IMAGES_PER_RUN)
+      ? article.imageMarkers.slice(0, maxInlineImagesRequested)
       : [];
 
     if (article.imageMarkers.length > markersToProcess.length) {
@@ -524,11 +939,27 @@ export async function POST(request: Request) {
       }
     }
 
-    imagesCount += imageResults.filter((r) => r.html).length;
+    const inlineImagesGenerated = imageResults.filter((r) => r.html).length;
+    imagesCount += inlineImagesGenerated;
 
     // 7. Replace YouTube markers with embeds
-    if (hasTime(MIN_TIME_FOR_YOUTUBE_MS)) {
-      for (const query of article.youtubeMarkers) {
+    htmlContent = canonicalizeYouTubeMarkers(htmlContent);
+    let allYoutubeMarkers = extractYouTubeMarkers(htmlContent);
+    if (youtubeEnabled && allYoutubeMarkers.length === 0 && maxYoutubeEmbedsRequested > 0) {
+      allYoutubeMarkers = deriveFallbackYouTubeMarkers(
+        htmlContent,
+        article.title,
+        maxYoutubeEmbedsRequested
+      );
+      htmlContent = injectYouTubeMarkersAfterH2(htmlContent, allYoutubeMarkers);
+    }
+
+    const youtubeMarkersToProcess = youtubeEnabled
+      ? allYoutubeMarkers.slice(0, maxYoutubeEmbedsRequested)
+      : [];
+
+    if (youtubeEnabled && hasTime(MIN_TIME_FOR_YOUTUBE_MS)) {
+      for (const query of youtubeMarkersToProcess) {
         try {
           const videos = await withTimeout(
             searchYouTubeVideos(query),
@@ -544,12 +975,29 @@ export async function POST(request: Request) {
           htmlContent = htmlContent.replace(`<!-- YOUTUBE:${query} -->`, "");
         }
       }
+      for (const query of allYoutubeMarkers) {
+        if (!youtubeMarkersToProcess.includes(query)) {
+          htmlContent = htmlContent.replace(`<!-- YOUTUBE:${query} -->`, "");
+        }
+      }
+    } else if (!youtubeEnabled) {
+      await logStep(
+        supabase,
+        runId,
+        "info",
+        "YouTube embeds overgeslagen volgens generation settings"
+      );
+      for (const query of allYoutubeMarkers) {
+        htmlContent = htmlContent.replace(`<!-- YOUTUBE:${query} -->`, "");
+      }
     } else {
       await logStep(supabase, runId, "warn", "YouTube embeds overgeslagen wegens tijdslimiet");
-      for (const query of article.youtubeMarkers) {
+      for (const query of allYoutubeMarkers) {
         htmlContent = htmlContent.replace(`<!-- YOUTUBE:${query} -->`, "");
       }
     }
+
+    htmlContent = htmlContent.replace(/<!--\s*YOUTUBE:[\s\S]*?-->/gi, "");
 
     // 8. Build Table of Contents
     if (article.tableOfContents.length > 0) {
@@ -572,20 +1020,92 @@ export async function POST(request: Request) {
       .eq("id", runId)
       .eq("user_id", userId);
 
-    // 10. Publish post to WordPress
-    await logStep(supabase, runId, "info", "Post publiceren op WordPress...");
-    const post = await createPost(creds, {
-      title: article.title,
-      content: htmlContent,
-      excerpt: article.metaDescription,
-      featuredMediaId: media?.id,
-      status: "publish",
-    });
+    // 10. Publish to WordPress (post or page depending on content type)
+    const effectiveContentType = contentType || "posts";
+    let post: { id: number; url: string };
 
-    await logStep(supabase, runId, "info", "Post gepubliceerd", {
-      postId: post.id,
-      postUrl: post.url,
-    });
+    if (effectiveContentType === "pages") {
+      let parentPageId: number | undefined;
+
+      if (clusterTopicId && clusterId) {
+        // Child page — look up the pillar page as parent
+        const { data: parentCluster } = await supabase
+          .from("asc_clusters")
+          .select("pillar_wp_post_id")
+          .eq("id", clusterId)
+          .single();
+
+        if (parentCluster?.pillar_wp_post_id) {
+          parentPageId = parentCluster.pillar_wp_post_id;
+        } else {
+          // Parent pillar not yet published — throw so QStash retries
+          throw new Error("Parent pillar pagina is nog niet gepubliceerd. Wordt opnieuw geprobeerd.");
+        }
+      }
+
+      await logStep(supabase, runId, "info", "Pagina publiceren op WordPress...");
+      post = await createPage(creds, {
+        title: article.title,
+        content: htmlContent,
+        excerpt: article.metaDescription,
+        featuredMediaId: media?.id,
+        status: "publish",
+        parent: parentPageId,
+        slug,
+      });
+      await logStep(supabase, runId, "info", "Pagina gepubliceerd", {
+        postId: post.id,
+        postUrl: post.url,
+        parentId: parentPageId,
+      });
+    } else {
+      await logStep(supabase, runId, "info", "Post publiceren op WordPress...");
+      post = await createPost(creds, {
+        title: article.title,
+        content: htmlContent,
+        excerpt: article.metaDescription,
+        featuredMediaId: media?.id,
+        status: "publish",
+      });
+      await logStep(supabase, runId, "info", "Post gepubliceerd", {
+        postId: post.id,
+        postUrl: post.url,
+      });
+    }
+
+    // 10.5. Deduct credits based on actual image usage
+    const creditAction = imagesCount > 0 ? "blog_post_with_images" : "blog_post_no_images" as const;
+    const creditResult = await deductCredits(supabase, userId, creditAction, runId);
+    if (!creditResult.success) {
+      await logStep(supabase, runId, "warn", "Credits konden niet worden afgeschreven");
+    } else {
+      await logStep(supabase, runId, "info", `${CREDIT_COSTS[creditAction]} credits afgeschreven`);
+      for (let i = 0; i < inlineImagesGenerated; i += 1) {
+        const inlineCreditResult = await deductCredits(
+          supabase,
+          userId,
+          "inline_image_generation",
+          `${runId}:inline:${i + 1}`
+        );
+        if (!inlineCreditResult.success) {
+          await logStep(
+            supabase,
+            runId,
+            "warn",
+            "Inline afbeelding credits konden niet worden afgeschreven"
+          );
+          break;
+        }
+      }
+      if (inlineImagesGenerated > 0) {
+        await logStep(
+          supabase,
+          runId,
+          "info",
+          `${inlineImagesGenerated * CREDIT_COSTS.inline_image_generation} extra credits afgeschreven voor ${inlineImagesGenerated} inline afbeeldingen`
+        );
+      }
+    }
 
     // 11. Cache the new post in asc_wp_posts
     await supabase.from("asc_wp_posts").upsert(

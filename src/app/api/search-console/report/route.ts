@@ -201,6 +201,14 @@ export async function GET(request: Request) {
       topPages: topPagesRows,
     });
 
+    const dailyData = currentDaily.map((row) => ({
+      date: row.keys[0] || "",
+      clicks: row.clicks,
+      impressions: row.impressions,
+      ctr: row.ctr,
+      position: row.position,
+    }));
+
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
       propertyUrl: connection.property_url,
@@ -211,6 +219,7 @@ export async function GET(request: Request) {
         previousStartDate: formatDate(prevStartDate),
         previousEndDate: formatDate(prevEndDate),
       },
+      dailyData,
       summary: {
         current: currentSummary,
         previous: previousSummary,

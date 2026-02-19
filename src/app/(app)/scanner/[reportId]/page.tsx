@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { NativeSelect } from "@/components/ui/select";
 import { IssueTypeBadge } from "@/components/issue-type-badge";
+import { isIssueTypeAutoFixable } from "@/lib/seo-fix";
 
 interface ScanReport {
   id: string;
@@ -24,8 +25,19 @@ interface ScanIssue {
   issue_type: string;
   severity: string;
   description: string;
+  current_value: string | null;
+  suggested_fix: string | null;
   is_fixed: boolean;
+  auto_fixable: boolean;
   fix_details: string | null;
+}
+
+function pagePathLabel(pageUrl: string): string {
+  try {
+    return new URL(pageUrl).pathname || "/";
+  } catch {
+    return pageUrl;
+  }
 }
 
 export default function ScanReportPage() {
@@ -37,6 +49,8 @@ export default function ScanReportPage() {
   const [issues, setIssues] = useState<ScanIssue[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  const [pageFilter, setPageFilter] = useState("all");
+  const [sortMode, setSortMode] = useState("issues_desc");
   const [fixingAll, setFixingAll] = useState(false);
   const [fixingId, setFixingId] = useState<string | null>(null);
 
@@ -63,12 +77,17 @@ export default function ScanReportPage() {
   async function fixIssue(issueId: string) {
     setFixingId(issueId);
     try {
-      await fetch("/api/scanner/issues/fix", {
+      const res = await fetch("/api/scanner/issues/fix", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ issueId }),
       });
-      fetchData();
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        window.alert(data.error || "Fixen mislukt");
+        return;
+      }
+      await fetchData();
     } finally {
       setFixingId(null);
     }
@@ -77,22 +96,52 @@ export default function ScanReportPage() {
   async function fixAll() {
     setFixingAll(true);
     try {
-      await fetch("/api/scanner/issues/fix-all", {
+      const res = await fetch("/api/scanner/issues/fix-all", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reportId }),
       });
-      fetchData();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.alert(data.error || "Bulk fixen mislukt");
+        return;
+      }
+      if ((data.enqueued ?? 0) === 0) {
+        window.alert("Geen auto-fixbare issues gevonden voor deze selectie.");
+      }
+      await fetchData();
     } finally {
       setFixingAll(false);
     }
   }
 
   const filteredIssues = issues.filter((issue) => {
-    if (filter === "unfixed") return !issue.is_fixed;
-    if (filter === "fixed") return issue.is_fixed;
-    if (filter === "critical") return issue.severity === "critical";
-    return true;
+    const matchesStatus =
+      filter === "unfixed"
+        ? !issue.is_fixed
+        : filter === "fixed"
+          ? issue.is_fixed
+          : filter === "critical"
+            ? issue.severity === "critical"
+            : true;
+
+    const matchesPage = pageFilter === "all" || issue.page_url === pageFilter;
+    return matchesStatus && matchesPage;
+  });
+
+  const pageOptions = Array.from(new Set(issues.map((issue) => issue.page_url))).sort();
+
+  const groupedIssues = filteredIssues.reduce<Record<string, ScanIssue[]>>((groups, issue) => {
+    if (!groups[issue.page_url]) groups[issue.page_url] = [];
+    groups[issue.page_url].push(issue);
+    return groups;
+  }, {});
+
+  const groupedEntries = Object.entries(groupedIssues).sort((a, b) => {
+    if (sortMode === "alpha_asc") {
+      return pagePathLabel(a[0]).localeCompare(pagePathLabel(b[0]), "nl");
+    }
+    return b[1].length - a[1].length;
   });
 
   const unfixedCount = issues.filter((i) => !i.is_fixed).length;
@@ -139,13 +188,33 @@ export default function ScanReportPage() {
         )}
       </div>
 
-      {/* Filter */}
+      {/* Filters */}
       <div className="flex items-center gap-3">
         <NativeSelect value={filter} onChange={(e) => setFilter(e.target.value)} className="w-48">
           <option value="all">Alle issues ({issues.length})</option>
           <option value="unfixed">Onopgelost ({unfixedCount})</option>
           <option value="fixed">Gefixt ({issues.length - unfixedCount})</option>
           <option value="critical">Kritiek ({issues.filter((i) => i.severity === "critical").length})</option>
+        </NativeSelect>
+        <NativeSelect
+          value={pageFilter}
+          onChange={(e) => setPageFilter(e.target.value)}
+          className="w-full max-w-md"
+        >
+          <option value="all">Alle pagina&apos;s ({pageOptions.length})</option>
+          {pageOptions.map((url) => (
+            <option key={url} value={url}>
+              {url}
+            </option>
+          ))}
+        </NativeSelect>
+        <NativeSelect
+          value={sortMode}
+          onChange={(e) => setSortMode(e.target.value)}
+          className="w-56"
+        >
+          <option value="issues_desc">Meeste issues eerst</option>
+          <option value="alpha_asc">Alfabetisch (A-Z)</option>
         </NativeSelect>
       </div>
 
@@ -157,29 +226,69 @@ export default function ScanReportPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredIssues.map((issue) => (
-            <div key={issue.id} className="rounded-xl border bg-card p-4 shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <IssueTypeBadge type={issue.issue_type} severity={issue.severity} />
-                    {issue.is_fixed && <Badge className="bg-green-600 text-white">Gefixt</Badge>}
+          {groupedEntries.map(([pageUrl, pageIssues]) => (
+            <details key={pageUrl} className="rounded-xl border bg-card shadow-sm">
+              <summary className="cursor-pointer list-none p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">{pagePathLabel(pageUrl)}</p>
+                    <a
+                      href={pageUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary hover:underline underline-offset-4"
+                    >
+                      {pageUrl}
+                    </a>
                   </div>
-                  <p className="text-sm">{issue.description}</p>
-                  <a href={issue.page_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline underline-offset-4 mt-1 inline-block">
-                    {issue.page_url}
-                  </a>
-                  {issue.fix_details && (
-                    <p className="text-xs text-muted-foreground mt-1">Fix: {issue.fix_details}</p>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{pageIssues.length} issues</Badge>
+                    <Badge variant="secondary">
+                      {pageIssues.filter((issue) => !issue.is_fixed).length} open
+                    </Badge>
+                  </div>
                 </div>
-                {!issue.is_fixed && (
-                  <Button variant="outline" size="sm" onClick={() => fixIssue(issue.id)} disabled={fixingId === issue.id} className="shrink-0">
-                    {fixingId === issue.id ? "Bezig..." : "Fixen"}
-                  </Button>
-                )}
+              </summary>
+              <div className="space-y-3 border-t p-4">
+                {pageIssues.map((issue) => (
+                  <div key={issue.id} className="rounded-lg border bg-background p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1 flex items-center gap-2">
+                          <IssueTypeBadge type={issue.issue_type} severity={issue.severity} />
+                          {issue.is_fixed && <Badge className="bg-green-600 text-white">Gefixt</Badge>}
+                        </div>
+                        <p className="text-sm">{issue.description}</p>
+                        {issue.current_value && (
+                          <p className="text-muted-foreground mt-1 text-xs break-words">
+                            Details: {issue.current_value}
+                          </p>
+                        )}
+                        {issue.suggested_fix && (
+                          <p className="text-muted-foreground mt-1 text-xs break-words">
+                            Advies: {issue.suggested_fix}
+                          </p>
+                        )}
+                        {issue.fix_details && (
+                          <p className="text-muted-foreground mt-1 text-xs">Fix: {issue.fix_details}</p>
+                        )}
+                      </div>
+                      {!issue.is_fixed && isIssueTypeAutoFixable(issue.issue_type) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fixIssue(issue.id)}
+                          disabled={fixingId === issue.id}
+                          className="shrink-0"
+                        >
+                          {fixingId === issue.id ? "Bezig..." : "Fixen"}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
+            </details>
           ))}
         </div>
       )}

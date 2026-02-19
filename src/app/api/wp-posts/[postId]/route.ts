@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { updatePost } from "@/lib/wordpress";
 import { decrypt } from "@/lib/encryption";
+import { normalizeGenerationSettings } from "@/lib/generation-settings";
 
 export async function GET(request: Request, { params }: { params: Promise<{ postId: string }> }) {
   const { postId } = await params;
@@ -27,7 +28,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { title, content, excerpt, metaTitle, metaDescription } = body;
+  const { title, content, excerpt, metaTitle, metaDescription, generationSettings } = body;
 
   const { data: post } = await supabase
     .from("asc_wp_posts")
@@ -61,6 +62,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
   if (excerpt) dbUpdates.excerpt = excerpt;
   if (metaTitle) dbUpdates.meta_title = metaTitle;
   if (metaDescription) dbUpdates.meta_description = metaDescription;
+  if (generationSettings !== undefined) {
+    dbUpdates.generation_settings = normalizeGenerationSettings(generationSettings);
+  }
 
   const { data: updated, error } = await supabase
     .from("asc_wp_posts")

@@ -9,7 +9,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("asc_sites")
-    .select("id, name, wp_base_url, wp_username, status, created_at")
+    .select("id, name, wp_base_url, wp_username, status, created_at, default_language, tone_of_voice")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -48,6 +48,31 @@ export async function POST(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ site: data }, { status: 201 });
+}
+
+export async function PATCH(request: Request) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await request.json();
+  const { id, toneOfVoice } = body;
+  if (!id) return NextResponse.json({ error: "Missing site id" }, { status: 400 });
+
+  if (toneOfVoice !== undefined && toneOfVoice !== null && typeof toneOfVoice !== "object") {
+    return NextResponse.json({ error: "Invalid toneOfVoice format" }, { status: 400 });
+  }
+
+  const { data, error } = await supabase
+    .from("asc_sites")
+    .update({ tone_of_voice: toneOfVoice ?? null })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select("id, name, wp_base_url, wp_username, status, created_at, default_language, tone_of_voice")
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ site: data });
 }
 
 export async function DELETE(request: Request) {

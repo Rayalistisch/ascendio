@@ -2,11 +2,16 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/encryption";
 import { deletePost } from "@/lib/wordpress";
+import { normalizeGenerationSettings } from "@/lib/generation-settings";
+import { checkFeatureAccess } from "@/lib/billing";
 
 export async function GET(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const access = await checkFeatureAccess(supabase, user.id, "clusters");
+  if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Pro om clusters te gebruiken" }, { status: 403 });
 
   const { searchParams } = new URL(request.url);
   const siteId = searchParams.get("siteId");
@@ -41,8 +46,20 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const access = await checkFeatureAccess(supabase, user.id, "clusters");
+  if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Pro om clusters te gebruiken" }, { status: 403 });
+
   const body = await request.json();
-  const { siteId, name, pillarTopic, pillarDescription, pillarKeywords, templateId } = body;
+  const {
+    siteId,
+    name,
+    pillarTopic,
+    pillarDescription,
+    pillarKeywords,
+    templateId,
+    contentType,
+    generationSettings,
+  } = body;
 
   if (!siteId || !name || !pillarTopic) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -56,17 +73,23 @@ export async function POST(request: Request) {
     .single();
   if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 });
 
+  const insertPayload: Record<string, unknown> = {
+    user_id: user.id,
+    site_id: siteId,
+    name,
+    pillar_topic: pillarTopic,
+    pillar_description: pillarDescription || null,
+    pillar_keywords: pillarKeywords || [],
+    template_id: templateId || null,
+    content_type: contentType || "pages",
+  };
+  if (generationSettings !== undefined) {
+    insertPayload.generation_settings = normalizeGenerationSettings(generationSettings);
+  }
+
   const { data, error } = await supabase
     .from("asc_clusters")
-    .insert({
-      user_id: user.id,
-      site_id: siteId,
-      name,
-      pillar_topic: pillarTopic,
-      pillar_description: pillarDescription || null,
-      pillar_keywords: pillarKeywords || [],
-      template_id: templateId || null,
-    })
+    .insert(insertPayload)
     .select()
     .single();
 
@@ -79,6 +102,9 @@ export async function PATCH(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const access = await checkFeatureAccess(supabase, user.id, "clusters");
+  if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Pro om clusters te gebruiken" }, { status: 403 });
+
   const body = await request.json();
   const { id, ...fields } = body;
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
@@ -90,6 +116,25 @@ export async function PATCH(request: Request) {
   if (fields.pillarKeywords !== undefined) updates.pillar_keywords = fields.pillarKeywords;
   if (fields.templateId !== undefined) updates.template_id = fields.templateId || null;
   if (fields.status !== undefined) updates.status = fields.status;
+  if (fields.generationSettings !== undefined) {
+    updates.generation_settings = normalizeGenerationSettings(fields.generationSettings);
+  }
+  if (fields.contentType !== undefined) {
+    // Block content type change if cluster already has published content
+    const { data: existing } = await supabase
+      .from("asc_clusters")
+      .select("pillar_wp_post_id")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .single();
+    if (existing?.pillar_wp_post_id) {
+      return NextResponse.json(
+        { error: "Kan publicatietype niet wijzigen als er al gepubliceerde content is." },
+        { status: 400 }
+      );
+    }
+    updates.content_type = fields.contentType;
+  }
 
   const { data, error } = await supabase
     .from("asc_clusters")
@@ -108,13 +153,16 @@ export async function DELETE(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const access = await checkFeatureAccess(supabase, user.id, "clusters");
+  if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Pro om clusters te gebruiken" }, { status: 403 });
+
   const body = await request.json();
   const { id } = body;
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
   const { data: cluster, error: clusterError } = await supabase
     .from("asc_clusters")
-    .select("id, site_id, pillar_wp_post_id")
+    .select("id, site_id, pillar_wp_post_id, content_type")
     .eq("id", id)
     .eq("user_id", user.id)
     .single();
@@ -158,7 +206,12 @@ export async function DELETE(request: Request) {
     };
 
     const wpDeletionResults = await Promise.allSettled(
-      wpPostIds.map((postId) => deletePost(creds, postId, { force: true }))
+      wpPostIds.map((postId) =>
+        deletePost(creds, postId, {
+          force: true,
+          collection: cluster.content_type === "pages" ? "pages" : "posts",
+        })
+      )
     );
 
     const failedDeletions = wpDeletionResults

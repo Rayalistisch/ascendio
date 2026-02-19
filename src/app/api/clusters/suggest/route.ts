@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { suggestClusterTopics } from "@/lib/openai";
 import { decrypt } from "@/lib/encryption";
 import { fetchPost, fetchPostOrPageBySlug } from "@/lib/wordpress";
+import { checkCredits, deductCredits, CREDIT_COSTS } from "@/lib/credits";
+import { checkFeatureAccess } from "@/lib/billing";
 
 const PILLAR_WP_FETCH_TIMEOUT_MS = 2500;
 
@@ -30,6 +33,16 @@ export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const access = await checkFeatureAccess(supabase, user.id, "clusters");
+  if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Pro om clusters te gebruiken" }, { status: 403 });
+
+  // Credit pre-check
+  const adminSupabase = createAdminClient();
+  const creditCheck = await checkCredits(adminSupabase, user.id, CREDIT_COSTS.cluster_suggest);
+  if (!creditCheck.enough) {
+    return NextResponse.json({ error: "Onvoldoende credits" }, { status: 402 });
+  }
 
   const body = await request.json();
   const { siteId, clusterId, pillarTopic, existingTopics } = body;
@@ -136,5 +149,9 @@ export async function POST(request: Request) {
     pillarContent: pillarContent || undefined,
     pillarContentTitle: pillarContentTitle || undefined,
   });
+
+  // Deduct credits after successful generation
+  await deductCredits(adminSupabase, user.id, "cluster_suggest", clusterId);
+
   return NextResponse.json({ suggestions });
 }

@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 export default function LoginPage() {
   const searchParams = useSearchParams();
   const mode = searchParams.get("mode");
+  const requestedInterval = searchParams.get("interval") === "yearly" ? "yearly" : "monthly";
   const loggedOut = searchParams.get("logged_out") === "1";
   const billingBypass = process.env.NEXT_PUBLIC_DEV_BILLING_BYPASS === "true";
 
@@ -25,13 +26,18 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     setMessage(null);
+    const nextPath = billingBypass
+      ? "/dashboard"
+      : `/billing?interval=${requestedInterval}`;
 
     if (isSignUp) {
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/api/auth/callback`,
+          emailRedirectTo: `${window.location.origin}/api/auth/callback?next=${encodeURIComponent(
+            nextPath
+          )}`,
         },
       });
       if (error) {
@@ -47,7 +53,7 @@ export default function LoginPage() {
       if (error) {
         setError(error.message);
       } else {
-        window.location.href = billingBypass ? "/dashboard" : "/billing";
+        window.location.href = nextPath;
       }
     }
 

@@ -8,6 +8,7 @@ const ISSUE_LABELS: Record<string, string> = {
   missing_meta_title: "Geen meta-titel",
   missing_schema: "Geen schema markup",
   low_internal_links: "Weinig interne links",
+  plagiarism_risk: "Plagiaat-risico",
   duplicate_content: "Dubbele content",
   broken_links: "Kapotte links",
 };

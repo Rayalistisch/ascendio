@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { enqueueGenerateJob } from "@/lib/qstash";
+import { normalizeGenerationSettings } from "@/lib/generation-settings";
+import { checkFeatureAccess } from "@/lib/billing";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const access = await checkFeatureAccess(supabase, user.id, "clusters");
+  if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Pro om clusters te gebruiken" }, { status: 403 });
+
   const body = await request.json();
-  const { clusterId, topicIds } = body;
+  const { clusterId, topicIds, generationSettings } = body;
 
   if (!clusterId) {
     return NextResponse.json({ error: "Missing clusterId" }, { status: 400 });
@@ -35,6 +40,46 @@ export async function POST(request: Request) {
   }
 
   const results: { topicId: string; runId: string }[] = [];
+  const contentType = cluster.content_type || "posts";
+  const effectiveGenerationSettings = normalizeGenerationSettings(
+    generationSettings ?? cluster.generation_settings
+  );
+
+  // For pages mode: generate pillar page first if not yet published
+  if (contentType === "pages" && !cluster.pillar_wp_post_id) {
+    const { data: pillarRun } = await supabase
+      .from("asc_runs")
+      .insert({
+        user_id: user.id,
+        site_id: cluster.site_id,
+        status: "queued",
+        cluster_id: clusterId,
+        cluster_topic_id: null,
+        template_id: cluster.template_id || null,
+      })
+      .select("id")
+      .single();
+
+    if (pillarRun) {
+      try {
+        await enqueueGenerateJob({
+          runId: pillarRun.id,
+          siteId: cluster.site_id,
+          userId: user.id,
+          clusterId,
+          templateId: cluster.template_id || undefined,
+          contentType,
+          generationSettings: effectiveGenerationSettings,
+        });
+        results.push({ topicId: "pillar", runId: pillarRun.id });
+      } catch {
+        await supabase
+          .from("asc_runs")
+          .update({ status: "failed", error_message: "Pillar job queueing failed", finished_at: new Date().toISOString() })
+          .eq("id", pillarRun.id);
+      }
+    }
+  }
 
   for (const topic of targetTopics) {
     // Create a run for this topic
@@ -62,6 +107,8 @@ export async function POST(request: Request) {
         clusterId,
         clusterTopicId: topic.id,
         templateId: cluster.template_id || undefined,
+        contentType,
+        generationSettings: effectiveGenerationSettings,
       });
 
       await supabase

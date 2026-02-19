@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { enqueueSeoFixJob } from "@/lib/qstash";
+import { isIssueTypeAutoFixable } from "@/lib/seo-fix";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -12,19 +13,28 @@ export async function POST(request: Request) {
 
   const { data: issues } = await supabase
     .from("asc_scan_issues")
-    .select("id, site_id")
+    .select("id, site_id, issue_type")
     .eq("report_id", reportId)
     .eq("user_id", user.id)
-    .eq("is_fixed", false)
-    .eq("auto_fixable", true);
+    .eq("is_fixed", false);
+
+  const eligibleIssues = (issues || []).filter((issue) =>
+    isIssueTypeAutoFixable(issue.issue_type)
+  );
 
   let enqueued = 0;
-  for (const issue of issues || []) {
+  for (const issue of eligibleIssues) {
     try {
       await enqueueSeoFixJob({ issueId: issue.id, siteId: issue.site_id, userId: user.id });
       enqueued++;
     } catch { /* skip */ }
   }
 
-  return NextResponse.json({ enqueued, total: issues?.length || 0 });
+  const total = issues?.length || 0;
+  return NextResponse.json({
+    enqueued,
+    total,
+    eligible: eligibleIssues.length,
+    skipped: Math.max(0, total - eligibleIssues.length),
+  });
 }

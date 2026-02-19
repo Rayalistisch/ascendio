@@ -38,6 +38,28 @@ export async function POST(request: Request) {
 
   if (error || !report) return NextResponse.json({ error: error?.message || "Failed" }, { status: 500 });
 
-  await enqueueScanJob({ reportId: report.id, siteId, userId: user.id });
+  try {
+    await enqueueScanJob({ reportId: report.id, siteId, userId: user.id });
+  } catch (enqueueError) {
+    await supabase
+      .from("asc_scan_reports")
+      .update({
+        status: "failed",
+        finished_at: new Date().toISOString(),
+      })
+      .eq("id", report.id)
+      .eq("user_id", user.id);
+
+    return NextResponse.json(
+      {
+        error:
+          enqueueError instanceof Error
+            ? `Scan kon niet worden ingepland: ${enqueueError.message}`
+            : "Scan kon niet worden ingepland",
+      },
+      { status: 500 }
+    );
+  }
+
   return NextResponse.json({ report }, { status: 201 });
 }

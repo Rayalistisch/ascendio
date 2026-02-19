@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getPriceIdForTier, getTierById, TierId } from "@/lib/billing";
+import {
+  type BillingInterval,
+  getPriceIdForTier,
+  getTierById,
+  type TierId,
+} from "@/lib/billing";
 
 function getBaseUrl(request: Request): string {
   const url = new URL(request.url);
@@ -44,15 +49,31 @@ export async function POST(request: Request) {
 
   const body = await request.json();
   const tierId = body?.tierId as TierId | undefined;
+  const billingIntervalRaw = body?.billingInterval;
+  const billingInterval: BillingInterval =
+    billingIntervalRaw === "yearly" ? "yearly" : "monthly";
   if (!tierId || !getTierById(tierId)) {
     return NextResponse.json({ error: "Ongeldig tierId" }, { status: 400 });
   }
 
-  const priceId = getPriceIdForTier(tierId);
-  if (!priceId) {
+  if (!process.env.STRIPE_SECRET_KEY) {
     return NextResponse.json(
-      { error: `Stripe prijs ontbreekt voor tier ${tierId}` },
-      { status: 500 }
+      {
+        error:
+          "Stripe checkout is niet geconfigureerd. Gebruik handmatige credit/toegangsbeheer in de backend.",
+      },
+      { status: 503 }
+    );
+  }
+
+  const priceId = getPriceIdForTier(tierId, billingInterval);
+  if (!priceId) {
+    const intervalLabel = billingInterval === "yearly" ? "jaarlijks" : "maandelijks";
+    return NextResponse.json(
+      {
+        error: `Stripe checkout niet geconfigureerd voor tier ${tierId} (${intervalLabel})`,
+      },
+      { status: 503 }
     );
   }
 
@@ -68,9 +89,6 @@ export async function POST(request: Request) {
     existingSub?.stripe_customer_id || (await createStripeCustomer(user.email || "", user.id));
 
   const stripeKey = process.env.STRIPE_SECRET_KEY;
-  if (!stripeKey) {
-    return NextResponse.json({ error: "STRIPE_SECRET_KEY ontbreekt" }, { status: 500 });
-  }
 
   const baseUrl = getBaseUrl(request);
   const params = new URLSearchParams({
@@ -82,8 +100,10 @@ export async function POST(request: Request) {
     "line_items[0][quantity]": "1",
     "metadata[user_id]": user.id,
     "metadata[tier_id]": tierId,
+    "metadata[billing_interval]": billingInterval,
     "subscription_data[metadata][user_id]": user.id,
     "subscription_data[metadata][tier_id]": tierId,
+    "subscription_data[metadata][billing_interval]": billingInterval,
   });
 
   const response = await fetch("https://api.stripe.com/v1/checkout/sessions", {

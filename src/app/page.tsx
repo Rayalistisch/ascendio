@@ -1,7 +1,22 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { Sora } from "next/font/google";
 import { redirect } from "next/navigation";
+
+export const metadata: Metadata = {
+  title: "Ascendio — SEO Automation & AI SEO Specialist Tool | Gratis proberen",
+  description:
+    "Ascendio automatiseert je SEO als een specialist: AI bedenkt onderwerpen, schrijft artikelen en publiceert direct op WordPress. De #1 SEO automation tool voor groeiende websites.",
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    title: "Ascendio — SEO Automation & AI SEO Specialist Tool",
+    description:
+      "Stop met handmatig content schrijven. Ascendio regelt je volledige SEO automation: onderzoek, schrijven en publiceren op autopilot.",
+  },
+};
 import {
   ArrowUpRight,
   BarChart3,
@@ -279,12 +294,12 @@ export default async function Home() {
       {/* Features bento */}
       <section id="product" className="mx-auto max-w-7xl px-6 py-20 md:px-10">
         <div className="mx-auto max-w-2xl text-center">
-          <p className="text-xs font-semibold uppercase tracking-widest text-indigo-500">Product</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-indigo-500">SEO Automation</p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
-            Alles wat je nodig hebt op één plek
+            Alles wat een SEO specialist doet, op autopilot
           </h2>
           <p className="mt-3 text-base leading-relaxed text-slate-500">
-            Van onderwerp bedenken tot publiceren — Ascendio regelt het hele proces.
+            Ascendio is je AI SEO automation tool: van onderwerp bedenken tot publiceren — het hele proces geautomatiseerd.
           </p>
         </div>
 
@@ -526,14 +541,7 @@ export default async function Home() {
               Start gratis
               <ArrowUpRight className="h-4 w-4" />
             </Link>
-            <Link
-              href="/login"
-              className="inline-flex items-center gap-2 rounded-full border border-white/20 px-7 py-3.5 text-sm font-semibold text-white transition hover:bg-white/10"
-            >
-              Ik heb al een account
-            </Link>
           </div>
-          <p className="mt-4 text-xs text-slate-500">7 dagen gratis · 10 credits · Geen creditcard nodig</p>
         </div>
       </section>
 

@@ -27,7 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { tierHasFeature, type GatedFeature } from "@/lib/billing";
+import { tierHasFeature, getTierById, type GatedFeature } from "@/lib/billing";
 import type { User } from "@supabase/supabase-js";
 import { NativeSelect } from "@/components/ui/select";
 
@@ -62,6 +62,7 @@ interface SubscriptionInfo {
   status: string;
   creditsRemaining: number;
   creditsMonthly: number;
+  trialEndsAt?: string | null;
 }
 
 export function AppShell({
@@ -256,8 +257,13 @@ export function AppShell({
     : 0;
   const creditBarColor = creditPercentage < 20 ? "bg-red-500" : "bg-green-500";
   const tierLabel = subscription?.tier
-    ? subscription.tier.charAt(0).toUpperCase() + subscription.tier.slice(1)
+    ? getTierById(subscription.tier)?.name ?? subscription.tier
     : null;
+
+  const trialDaysLeft = subscription?.trialEndsAt
+    ? Math.max(0, Math.ceil((new Date(subscription.trialEndsAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : null;
+  const showTrialBanner = subscription?.status === "trialing" && trialDaysLeft !== null;
 
   // Shared sidebar content rendered in both desktop and mobile
   const sidebarContent = (
@@ -481,6 +487,21 @@ export function AppShell({
 
       {/* Main content */}
       <main className="flex-1 pt-14 lg:ml-60 lg:pt-0">
+        {showTrialBanner && (
+          <div className="flex items-center justify-between gap-4 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 border-b border-amber-200">
+            <span>
+              <strong>Gratis trial</strong> — nog{" "}
+              {trialDaysLeft === 0 ? "minder dan 1 dag" : `${trialDaysLeft} ${trialDaysLeft === 1 ? "dag" : "dagen"}`}{" "}
+              en {credits.remaining} credits over.
+            </span>
+            <Link
+              href="/billing"
+              className="shrink-0 rounded-full bg-amber-800 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700"
+            >
+              Upgrade nu
+            </Link>
+          </div>
+        )}
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8">{children}</div>
       </main>
     </div>

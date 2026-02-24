@@ -11,7 +11,7 @@ import { NativeSelect } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SeoScoreBadge, type SeoDetails } from "@/components/seo-score-badge";
-import { HtmlPreview } from "@/components/html-preview";
+import { TiptapEditor } from "@/components/tiptap-editor";
 import { KeywordInput } from "@/components/keyword-input";
 import {
   DEFAULT_GENERATION_SETTINGS,
@@ -382,13 +382,13 @@ export default function SeoEditorPostPage() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label>{showPreview ? "Content Preview (bewerkbaar)" : "Content (HTML)"}</Label>
+              <Label>{showPreview ? "Content (WYSIWYG)" : "Content (HTML)"}</Label>
               <Button variant="ghost" size="sm" onClick={() => setShowPreview(!showPreview)}>
                 {showPreview ? "Codeweergave" : "Preview"}
               </Button>
             </div>
             {showPreview ? (
-              <HtmlPreview html={content} editable onChange={setContent} />
+              <TiptapEditor content={content} onChange={setContent} />
             ) : (
               <Textarea
                 value={content}
@@ -398,7 +398,7 @@ export default function SeoEditorPostPage() {
               />
             )}
             <p className="text-xs text-muted-foreground">
-              Preview staat standaard aan. Je kunt direct in de preview typen; schakel naar codeweergave voor raw HTML.
+              Bewerk content met de toolbar of schakel naar codeweergave voor raw HTML.
             </p>
           </div>
 

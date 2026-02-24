@@ -253,14 +253,23 @@ export async function GET(request: Request) {
       })),
     });
   } catch (err) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Rapportage ophalen uit Search Console mislukt";
+    const lower = message.toLowerCase();
+    const needsReconnect =
+      lower.includes("invalid_grant") ||
+      lower.includes("token has been expired") ||
+      lower.includes("token revoked") ||
+      lower.includes("refresh token");
+
     return NextResponse.json(
       {
-        error:
-          err instanceof Error
-            ? err.message
-            : "Rapportage ophalen uit Search Console mislukt",
+        needsReconnect,
+        error: message,
       },
-      { status: 500 }
+      { status: needsReconnect ? 502 : 500 }
     );
   }
 }

@@ -50,23 +50,23 @@ const systemCards: {
   icon: LucideIcon;
 }[] = [
   {
-    title: "Research Intelligence",
+    title: "Slim onderzoek",
     description:
-      "Detecteert kansen uit SERP trends, Search Console en actuele bronnen per workspace.",
-    stat: "42 kansen / dag",
+      "Ascendio vindt automatisch de beste onderwerpen voor jouw website op basis van zoektrends en je eigen data.",
+    stat: "Dagelijks nieuwe kansen",
     icon: Sparkles,
   },
   {
-    title: "Content Production",
+    title: "Artikelen schrijven",
     description:
-      "Schrijft complete pagina's met interne links, structuur en metadata afgestemd op je clusterplan.",
-    stat: "1-click run",
+      "Volledige artikelen worden voor je geschreven, inclusief links naar je eigen pagina's en goede SEO-structuur.",
+    stat: "In één klik klaar",
     icon: Bot,
   },
   {
-    title: "Distribution Ops",
+    title: "Direct publiceren",
     description:
-      "Publiceert naar WordPress en zet indexing, updates en rapportages direct klaar voor je team.",
+      "Je content wordt automatisch op je WordPress-site geplaatst. Geen handmatig kopiëren meer.",
     stat: "Live in minuten",
     icon: Workflow,
   },
@@ -79,24 +79,24 @@ const workflowPhases: {
   icon: LucideIcon;
 }[] = [
   {
-    label: "Fase 01",
-    title: "Strategie per workspace",
+    label: "Stap 1",
+    title: "Vertel wat je wilt bereiken",
     description:
-      "Koppel domein, tone of voice en SEO-doel. Ascendio bouwt een pilar + cluster routekaart.",
+      "Verbind je website, kies je schrijfstijl en bepaal waar je op gevonden wilt worden. Ascendio maakt een plan voor je.",
     icon: LayoutDashboard,
   },
   {
-    label: "Fase 02",
-    title: "Runs met kwaliteitscontrole",
+    label: "Stap 2",
+    title: "Ascendio schrijft en controleert",
     description:
-      "Generatie, interne linking en SEO checks lopen in dezelfde pipeline zonder handmatige stappen.",
+      "Je artikelen worden automatisch geschreven, onderling gelinkt en gecontroleerd op SEO. Zonder dat jij iets hoeft te doen.",
     icon: ShieldCheck,
   },
   {
-    label: "Fase 03",
-    title: "Publicatie en groeidata",
+    label: "Stap 3",
+    title: "Publiceren en resultaten zien",
     description:
-      "Output gaat naar WordPress, waarna prestaties automatisch terugkomen in je rapportages.",
+      "Je content verschijnt op je website en je ziet meteen hoe je artikelen presteren in Google.",
     icon: LineChart,
   },
 ];
@@ -107,29 +107,29 @@ const capabilityGrid: {
   image: string;
 }[] = [
   {
-    title: "Research Map",
+    title: "Onderwerpen ontdekken",
     description:
-      "Visualiseer kansrijke onderwerpen en cluster-relaties voordat je publiceert.",
-    image: "/landing/research-map.svg",
+      "Zie in één overzicht welke onderwerpen kansrijk zijn en hoe ze met elkaar samenhangen.",
+    image: "/landing/bronnen.png",
   },
   {
-    title: "Generation Studio",
+    title: "Content op maat",
     description:
-      "Zet strategie om naar consistente output met vaste structuur en schrijfstijl.",
-    image: "/landing/generation-lab.svg",
+      "Elk artikel wordt geschreven in jouw stijl, met een vaste structuur die werkt voor Google.",
+    image: "/landing/artikelstructuur.png",
   },
   {
-    title: "Distribution Grid",
+    title: "Alles op je site",
     description:
-      "Stuur content door naar WordPress en houd controle op indexering en updates.",
-    image: "/landing/distribution-grid.svg",
+      "Je artikelen worden automatisch op je WordPress-site geplaatst. Jij houdt de controle.",
+    image: "/landing/runs.png",
   },
 ];
 
 const useCases: { title: string; icon: LucideIcon }[] = [
-  { title: "Multi-site beheer", icon: Globe2 },
-  { title: "Content teams", icon: BarChart3 },
-  { title: "SEO bureaus", icon: Database },
+  { title: "Meerdere websites", icon: Globe2 },
+  { title: "Marketing teams", icon: BarChart3 },
+  { title: "SEO-bureaus", icon: Database },
 ];
 
 const reveal = (delayMs: number) => ({
@@ -171,14 +171,14 @@ export default async function Home() {
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-slate-200/60 bg-[#f8f9fc]/85 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-6 md:px-10">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 text-white">
-              <span className="text-sm font-semibold">A</span>
-              <span className="absolute inset-0 rounded-xl ring-1 ring-white/20" />
-            </span>
-            <span className={`${sora.className} text-lg font-semibold tracking-tight`}>
-              Ascendio
-            </span>
+          <Link href="/" className="flex items-center">
+            <Image
+              src="/logo.svg"
+              alt="Ascendio"
+              width={220}
+              height={220}
+              className="h-44 w-auto"
+            />
           </Link>
 
           <nav className="hidden items-center gap-8 text-sm font-medium text-slate-500 lg:flex">
@@ -215,36 +215,36 @@ export default async function Home() {
       <section className="relative overflow-hidden pb-20 pt-10 md:pt-16">
         <div className="mx-auto grid max-w-7xl gap-12 px-6 md:px-10 lg:grid-cols-[1.08fr_0.92fr] lg:items-center">
           <div style={reveal(80)}>
-            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              AI Content Operations
-            </span>
             <h1
               className={`${sora.className} mt-6 max-w-2xl text-[2.75rem] font-semibold leading-[1.06] tracking-tight text-slate-950 sm:text-5xl md:text-[3.5rem]`}
             >
-              Van losse content taken naar een strakke
+              Verhoog je SEO score,
               <span className="bg-gradient-to-r from-sky-600 via-indigo-600 to-violet-500 bg-clip-text text-transparent">
                 {" "}
-                growth engine
+                zonder zelf te schrijven
               </span>
               .
             </h1>
             <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-500 md:text-lg">
-              Ascendio automatiseert research, schrijven, interne linking, publicatie en
-              rapportage vanuit één command center voor jouw website of klantportfolio.
+              Ascendio bedenkt de juiste onderwerpen, schrijft je artikelen en plaatst ze
+              direct op je website. Jij hoeft alleen nog op &quot;start&quot; te klikken.
+            </p>
+            <p className="mt-2 text-sm text-slate-400">
+              7 dagen gratis · 10 credits · Geen creditcard nodig
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
               <Link
                 href="/login?mode=signup"
                 className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:-translate-y-0.5 hover:bg-slate-800"
               >
-                Plan een eerste run
+                Gratis proberen
                 <ChevronRight className="h-4 w-4" />
               </Link>
               <Link
                 href="#workflow"
                 className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
               >
-                Bekijk workflow
+                Hoe werkt het?
                 <Workflow className="h-4 w-4" />
               </Link>
             </div>
@@ -266,10 +266,10 @@ export default async function Home() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
-                    Command Center
+                    Dashboard
                   </p>
                   <h3 className={`${sora.className} mt-2 text-xl font-semibold text-slate-900`}>
-                    SEO Cluster Run
+                    Content wordt gemaakt
                   </h3>
                 </div>
                 <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
@@ -280,9 +280,9 @@ export default async function Home() {
 
               <div className="mt-5 grid gap-2.5">
                 {[
-                  "Research topics verzameld",
-                  "Pillar + clusters gegenereerd",
-                  "WordPress publicatie gepland",
+                  "Onderwerpen onderzocht",
+                  "Artikelen geschreven",
+                  "Klaar om te publiceren",
                 ].map((item) => (
                   <div
                     key={item}
@@ -297,8 +297,8 @@ export default async function Home() {
               <div className="mt-5 overflow-hidden rounded-xl border border-slate-100 bg-slate-50">
                 <div className="relative h-44 md:h-52">
                   <Image
-                    src="/landing/ops-canvas.svg"
-                    alt="Ascendio command center overzicht"
+                    src="/landing/seo-score.png"
+                    alt="Ascendio SEO score overzicht"
                     fill
                     className="object-cover"
                     priority
@@ -325,15 +325,12 @@ export default async function Home() {
       {/* Product */}
       <section id="product" className="mx-auto max-w-7xl px-6 py-16 md:px-10 md:py-20">
         <div className="mx-auto max-w-3xl text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-            Product
-          </p>
           <h2 className={`${sora.className} mt-4 text-3xl font-semibold md:text-4xl`}>
-            Eén platform voor de volledige content-operatie
+            Alles wat je nodig hebt op één plek
           </h2>
           <p className="mt-3 text-base leading-relaxed text-slate-500">
-            De kern van Ascendio is een modulair systeem dat strategy, productie en
-            distributie aan elkaar koppelt.
+            Van onderwerp bedenken tot publiceren van artikelen, Ascendio regelt het hele proces
+            zodat jij je kunt focussen op je bedrijf.
           </p>
         </div>
 
@@ -343,7 +340,7 @@ export default async function Home() {
               key={title}
               className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-white">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-300 text-white">
                 <Icon className="h-5 w-5" />
               </div>
               <h3 className={`${sora.className} mt-4 text-lg font-semibold text-slate-900`}>
@@ -363,17 +360,10 @@ export default async function Home() {
         <div className="mx-auto max-w-7xl px-6 md:px-10">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div className="max-w-2xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                Workflow
-              </p>
               <h2 className={`${sora.className} mt-4 text-3xl font-semibold md:text-4xl`}>
-                Duidelijke flow van idee naar publicatie
+                Zo simpel werkt het
               </h2>
             </div>
-            <p className="max-w-xl text-sm leading-relaxed text-slate-500">
-              Elke fase heeft vaste controles, zodat je team weet wat er gebeurt en waarom
-              een run wel of niet live gaat.
-            </p>
           </div>
 
           <div className="mt-10 grid gap-4 lg:grid-cols-3">
@@ -385,7 +375,7 @@ export default async function Home() {
                 <span className="inline-flex items-center rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
                   {label}
                 </span>
-                <div className="mt-4 flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white">
+                <div className="mt-4 flex h-10 w-10 items-center justify-center rounded-xl bg-purple-300 text-white">
                   <Icon className="h-5 w-5" />
                 </div>
                 <h3 className={`${sora.className} mt-4 text-lg font-semibold text-slate-900`}>
@@ -402,24 +392,21 @@ export default async function Home() {
       <section className="mx-auto max-w-7xl px-6 py-16 md:px-10 md:py-20">
         <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-              Modules
-            </p>
             <h2 className={`${sora.className} mt-4 text-3xl font-semibold md:text-4xl`}>
-              Visuals die je operatie uitlegbaar maken
+              Overzicht en controle over je content
             </h2>
             <p className="mt-3 max-w-xl text-base leading-relaxed text-slate-500">
-              In plaats van losse prompts zie je per cluster exact welke input, output en
-              KPI erbij horen.
+              Je ziet precies wat er gebeurt: welke artikelen er zijn, hoe ze presteren en
+              wat er nog moet gebeuren.
             </p>
             <ul className="mt-6 space-y-2.5">
               {[
-                "Prompt chaining met vaste QA checkpoints",
-                "Interne linking op basis van je eigen content",
-                "Rapportage met Search Console data per workspace",
+                "Elk artikel wordt automatisch gecontroleerd op kwaliteit",
+                "Je pagina's linken slim naar elkaar voor betere vindbaarheid",
+                "Zie hoe je content presteert met Google-data",
               ].map((item) => (
                 <li key={item} className="flex items-start gap-2.5 text-sm text-slate-600">
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-purple-300 text-white">
                     <Check className="h-3 w-3" />
                   </span>
                   <span>{item}</span>
@@ -439,7 +426,7 @@ export default async function Home() {
                     src={tile.image}
                     alt={tile.title}
                     fill
-                    className="object-cover"
+                    className="object-contain p-2"
                   />
                 </div>
                 <div className="p-5">
@@ -464,11 +451,11 @@ export default async function Home() {
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-10 shadow-xl md:px-10">
           <div className="mx-auto max-w-2xl text-center">
             <h2 className={`${sora.className} text-3xl font-semibold text-slate-900 md:text-4xl`}>
-              Klaar om je contentmachine live te zetten?
+              Klaar om meer bezoekers te krijgen?
             </h2>
             <p className="mt-3 text-base leading-relaxed text-slate-500">
-              Verbind je site, start je eerste cluster-run en laat Ascendio het
-              operationele werk overnemen.
+              Verbind je website, kies je onderwerpen en laat Ascendio de rest doen.
+              Je eerste artikelen kunnen vandaag nog online staan.
             </p>
             <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
               <Link
@@ -490,21 +477,106 @@ export default async function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200/60 bg-white/50">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-6 text-sm text-slate-400 md:flex-row md:items-center md:justify-between md:px-10">
-          <p>
-            &copy; {new Date().getFullYear()} Ascendio. AI content operations voor teams.
-          </p>
-          <div className="flex items-center gap-4">
-            <Link href="#product" className="transition hover:text-slate-900">
-              Product
-            </Link>
-            <Link href="#workflow" className="transition hover:text-slate-900">
-              Workflow
-            </Link>
-            <Link href="#pricing" className="transition hover:text-slate-900">
-              Pricing
-            </Link>
+      <footer className="bg-slate-950 text-slate-400">
+        <div className="mx-auto max-w-7xl px-6 pb-10 pt-16 md:px-10">
+          {/* Top section: logo + link columns */}
+          <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
+            {/* Brand column */}
+            <div>
+              <Link href="/" className="inline-block">
+                <Image
+                  src="/logo.svg"
+                  alt="Ascendio"
+                  width={160}
+                  height={160}
+                  className="h-28 w-auto brightness-0 invert"
+                />
+              </Link>
+              <p className="mt-3 max-w-xs text-sm leading-relaxed">
+                Slimme content voor groeiende websites. Ascendio automatiseert je
+                contentproductie zodat jij je kunt focussen op je bedrijf.
+              </p>
+            </div>
+
+            {/* Product column */}
+            <div>
+              <h4 className={`${sora.className} text-sm font-semibold text-white`}>
+                Product
+              </h4>
+              <ul className="mt-4 space-y-3 text-sm">
+                <li>
+                  <Link href="#product" className="transition hover:text-white">
+                    Functies
+                  </Link>
+                </li>
+                <li>
+                  <Link href="#workflow" className="transition hover:text-white">
+                    Zo werkt het
+                  </Link>
+                </li>
+                <li>
+                  <Link href="#pricing" className="transition hover:text-white">
+                    Pricing
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* Company column */}
+            <div>
+              <h4 className={`${sora.className} text-sm font-semibold text-white`}>
+                Bedrijf
+              </h4>
+              <ul className="mt-4 space-y-3 text-sm">
+                <li>
+                  <Link href="#" className="transition hover:text-white">
+                    Over Ascendio
+                  </Link>
+                </li>
+                <li>
+                  <Link href="#" className="transition hover:text-white">
+                    Blog
+                  </Link>
+                </li>
+                <li>
+                  <Link href="#" className="transition hover:text-white">
+                    Changelog
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* Contact column */}
+            <div>
+              <h4 className={`${sora.className} text-sm font-semibold text-white`}>
+                Contact
+              </h4>
+              <ul className="mt-4 space-y-3 text-sm">
+                <li>
+                  <Link href="mailto:support@ascend.io" className="transition hover:text-white">
+                    Support
+                  </Link>
+                </li>
+                <li>
+                  <Link href="mailto:info@ascend.io" className="transition hover:text-white">
+                    info@ascend.io
+                  </Link>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Bottom bar */}
+          <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-slate-800 pt-8 text-xs sm:flex-row">
+            <p>&copy; {new Date().getFullYear()} Ascendio. Alle rechten voorbehouden.</p>
+            <div className="flex items-center gap-6">
+              <Link href="#" className="transition hover:text-white">
+                Privacybeleid
+              </Link>
+              <Link href="#" className="transition hover:text-white">
+                Algemene voorwaarden
+              </Link>
+            </div>
           </div>
         </div>
       </footer>

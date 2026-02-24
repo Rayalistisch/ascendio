@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { Check } from "lucide-react";
 import {
-  formatEuro,
   getTierPriceLabel,
   getTierSecondaryPriceLabel,
   getYearlyFreeMonths,
@@ -15,35 +14,15 @@ interface BillingPlansProps {
   tiers: TierDefinition[];
   activeTierId: string | null;
   subscriptionStatus: string | null;
-  initialBillingInterval?: BillingInterval;
-  allowMonthlyCheckout?: boolean;
-  allowYearlyCheckout?: boolean;
 }
 
 export function BillingPlans({
   tiers,
   activeTierId,
   subscriptionStatus,
-  initialBillingInterval = "monthly",
-  allowMonthlyCheckout = true,
-  allowYearlyCheckout = true,
 }: BillingPlansProps) {
-  const effectiveInitialInterval: BillingInterval =
-    initialBillingInterval === "yearly"
-      ? allowYearlyCheckout
-        ? "yearly"
-        : allowMonthlyCheckout
-        ? "monthly"
-        : "yearly"
-      : allowMonthlyCheckout
-      ? "monthly"
-      : allowYearlyCheckout
-      ? "yearly"
-      : "monthly";
   const [selectedTier, setSelectedTier] = useState<string>(activeTierId || "pro");
-  const [billingInterval, setBillingInterval] = useState<BillingInterval>(
-    effectiveInitialInterval
-  );
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,18 +32,9 @@ export function BillingPlans({
   );
 
   const hasActive = subscriptionStatus === "active" || subscriptionStatus === "trialing";
-  const checkoutAvailableForSelectedInterval =
-    billingInterval === "yearly" ? allowYearlyCheckout : allowMonthlyCheckout;
-  const checkoutAvailableAny = allowMonthlyCheckout || allowYearlyCheckout;
 
   async function startCheckout() {
     if (!selected) return;
-    if (!checkoutAvailableForSelectedInterval) {
-      setError(
-        "Stripe checkout staat uit voor dit interval. Beheer credits en rechten handmatig via admin."
-      );
-      return;
-    }
 
     setLoading(true);
     setError(null);
@@ -94,46 +64,39 @@ export function BillingPlans({
 
   return (
     <div className="space-y-8">
-      <div className="mb-2 flex items-center justify-between rounded-2xl border border-slate-200 bg-white/80 p-4">
+      {/* Billing interval toggle */}
+      <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/80 p-4">
         <p className="text-sm font-semibold text-slate-700">Facturatie</p>
-        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-1 text-xs font-semibold uppercase tracking-[0.12em]">
+        <div className="inline-flex rounded-full border border-slate-200 bg-slate-100 p-1 text-xs font-semibold uppercase tracking-[0.1em]">
           <button
             type="button"
-            onClick={() => allowMonthlyCheckout && setBillingInterval("monthly")}
-            disabled={!allowMonthlyCheckout}
-            className={`rounded-md px-3 py-2 transition ${
+            onClick={() => setBillingInterval("monthly")}
+            className={`rounded-full px-4 py-1.5 transition ${
               billingInterval === "monthly"
-                ? "bg-slate-900 text-white"
-                : "text-slate-600 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-500 hover:text-slate-900"
             }`}
           >
             Maandelijks
           </button>
           <button
             type="button"
-            onClick={() => allowYearlyCheckout && setBillingInterval("yearly")}
-            disabled={!allowYearlyCheckout}
-            className={`rounded-md px-3 py-2 transition ${
+            onClick={() => setBillingInterval("yearly")}
+            className={`rounded-full px-4 py-1.5 transition ${
               billingInterval === "yearly"
-                ? "bg-slate-900 text-white"
-                : "text-slate-600 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-500 hover:text-slate-900"
             }`}
           >
             Jaarlijks
+            <span className="ml-1.5 inline-flex rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">
+              -{getYearlyFreeMonths()} mnd
+            </span>
           </button>
         </div>
       </div>
-      {!checkoutAvailableAny && (
-        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
-          Stripe staat uit. Credits en rechten beheer je nu handmatig via de backend/admin route.
-        </p>
-      )}
-      {billingInterval === "yearly" && (
-        <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
-          Jaarlijks betalen: {getYearlyFreeMonths()} maanden gratis.
-        </p>
-      )}
 
+      {/* Tier cards */}
       <div className="grid gap-5 md:grid-cols-3">
         {tiers.map((tier) => {
           const isSelected = tier.id === selectedTier;
@@ -145,7 +108,7 @@ export function BillingPlans({
               type="button"
               key={tier.id}
               onClick={() => setSelectedTier(tier.id)}
-              className={`relative rounded-3xl border p-6 text-left transition ${
+              className={`relative rounded-2xl border p-5 text-left transition ${
                 isSelected
                   ? "border-slate-900 bg-slate-900 text-white"
                   : "border-slate-200 bg-white text-slate-900 hover:border-slate-400 hover:shadow-md"
@@ -157,9 +120,11 @@ export function BillingPlans({
                 </p>
               )}
               <p className="text-xs uppercase tracking-[0.18em] opacity-70">{tier.name}</p>
-              <p className="mt-2 text-3xl font-black">{getTierPriceLabel(tier, billingInterval)}</p>
+              <p className="mt-2 text-3xl font-black">
+                {getTierPriceLabel(tier, billingInterval)}
+              </p>
               {billingInterval === "yearly" && (
-                <p className="mt-1 text-xs opacity-70">
+                <p className="mt-1 text-xs opacity-60">
                   {getTierSecondaryPriceLabel(tier, billingInterval)}
                 </p>
               )}
@@ -184,14 +149,15 @@ export function BillingPlans({
         })}
       </div>
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-7">
+      {/* Selected plan detail */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-6">
         <h2 className="text-2xl font-black">{selected.name}</h2>
-        <p className="mt-2 text-slate-600">{selected.description}</p>
-        <p className="mt-3 text-base font-semibold text-slate-900">
+        <p className="mt-1 text-slate-500">{selected.description}</p>
+        <p className="mt-3 text-lg font-semibold text-slate-900">
           {getTierPriceLabel(selected, billingInterval)}
         </p>
         {billingInterval === "yearly" && (
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-slate-500">
             {getTierSecondaryPriceLabel(selected, billingInterval)}
           </p>
         )}
@@ -210,18 +176,17 @@ export function BillingPlans({
         <button
           type="button"
           onClick={startCheckout}
-          disabled={loading || !checkoutAvailableForSelectedInterval}
-          className="mt-7 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+          disabled={loading}
+          className="mt-6 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
         >
-          {!checkoutAvailableForSelectedInterval
-            ? "Checkout niet beschikbaar"
-            : loading
+          {loading
             ? "Bezig met checkout..."
-            : `Activeer ${selected.name} (${billingInterval === "yearly" ? "jaar" : "maand"})`}
+            : `Activeer ${selected.name} (${billingInterval === "yearly" ? "jaarlijks" : "maandelijks"})`}
         </button>
       </div>
 
-      <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white">
+      {/* Comparison table */}
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
         <div className="grid min-w-[760px] grid-cols-4 border-b border-slate-200 bg-slate-50 text-sm font-semibold">
           <div className="p-4">Planvergelijking</div>
           <div className="p-4">Starter</div>
@@ -232,18 +197,6 @@ export function BillingPlans({
         {[
           ["WordPress sites", "Onbeperkt", "Onbeperkt", "Onbeperkt"],
           ["AI credits / maand", "50", "150", "400"],
-          [
-            "Prijs / maand",
-            formatEuro(tiers.find((tier) => tier.id === "starter")?.priceMonthly || 0),
-            formatEuro(tiers.find((tier) => tier.id === "pro")?.priceMonthly || 0),
-            formatEuro(tiers.find((tier) => tier.id === "business")?.priceMonthly || 0),
-          ],
-          [
-            "Prijs / jaar",
-            formatEuro(tiers.find((tier) => tier.id === "starter")?.priceYearly || 0),
-            formatEuro(tiers.find((tier) => tier.id === "pro")?.priceYearly || 0),
-            formatEuro(tiers.find((tier) => tier.id === "business")?.priceYearly || 0),
-          ],
           ["SEO scanner & fix", "Ja", "Ja", "Ja"],
           ["Clusters & planning", "Nee", "Ja", "Ja"],
           ["Social automation", "Nee", "Ja", "Ja"],
@@ -262,7 +215,7 @@ export function BillingPlans({
                 {cell === "Ja" ? (
                   <Check className="h-4 w-4 text-emerald-500" />
                 ) : cell === "Nee" ? (
-                  <span className="text-slate-300">—</span>
+                  <span className="text-slate-300">&mdash;</span>
                 ) : (
                   cell
                 )}

@@ -1,7 +1,65 @@
 import { createHmac } from "crypto";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getTierById, getTierByPriceId, TierId } from "@/lib/billing";
+import { getTierById, getTierByPriceId, TierId, type TierDefinition } from "@/lib/billing";
+import nodemailer from "nodemailer";
+
+async function sendOwnerNotification({
+  userId,
+  tier,
+  tierDef,
+  billingInterval,
+  supabase,
+}: {
+  userId: string;
+  tier: string;
+  tierDef: TierDefinition | undefined;
+  billingInterval: string | undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any;
+}) {
+  const gmailUser = process.env.GMAIL_USER;       // bijv. ascendio@luminx.nl
+  const gmailPass = process.env.GMAIL_APP_PASSWORD; // Google app-wachtwoord
+  const notifyEmail = process.env.OWNER_NOTIFY_EMAIL ?? gmailUser;
+
+  if (!gmailUser || !gmailPass || !notifyEmail) return;
+
+  // Look up user email
+  const { data: { user } } = await supabase.auth.admin.getUserById(userId);
+  const userEmail = user?.email ?? "onbekend";
+
+  const tierName = tierDef?.name ?? tier;
+  const interval = billingInterval === "yearly" ? "jaarlijks" : "maandelijks";
+  const price = billingInterval === "yearly"
+    ? `€${tierDef?.priceYearly ?? "?"}/jaar`
+    : `€${tierDef?.priceMonthly ?? "?"}/maand`;
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
+      auth: { user: gmailUser, pass: gmailPass },
+    });
+
+    await transporter.sendMail({
+      from: `"Ascendio" <${gmailUser}>`,
+      to: notifyEmail,
+      subject: `🎉 Nieuwe klant: ${userEmail} (${tierName})`,
+      html: `
+        <h2>Nieuwe betaalde klant op Ascendio</h2>
+        <table style="border-collapse:collapse;font-family:sans-serif;font-size:14px;">
+          <tr><td style="padding:6px 12px;color:#666;">E-mail</td><td style="padding:6px 12px;font-weight:bold;">${userEmail}</td></tr>
+          <tr><td style="padding:6px 12px;color:#666;">Plan</td><td style="padding:6px 12px;font-weight:bold;">${tierName}</td></tr>
+          <tr><td style="padding:6px 12px;color:#666;">Facturering</td><td style="padding:6px 12px;">${interval} · ${price}</td></tr>
+          <tr><td style="padding:6px 12px;color:#666;">Credits</td><td style="padding:6px 12px;">${tierDef?.includedCredits ?? "?"} per maand</td></tr>
+        </table>
+      `,
+    });
+  } catch (err) {
+    console.error("[webhook] Failed to send owner notification:", err);
+  }
+}
 
 function verifyStripeSignature(payload: string, signatureHeader: string | null): boolean {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -46,6 +104,9 @@ export async function POST(request: Request) {
     const tierFromMetadata = object.metadata && typeof object.metadata === "object"
       ? (object.metadata as Record<string, string>).tier_id
       : undefined;
+    const billingInterval = object.metadata && typeof object.metadata === "object"
+      ? (object.metadata as Record<string, string>).billing_interval
+      : undefined;
 
     if (userId) {
       const tier = (tierFromMetadata && getTierById(tierFromMetadata))
@@ -67,6 +128,9 @@ export async function POST(request: Request) {
         },
         { onConflict: "user_id" }
       );
+
+      // Send notification email to owner
+      await sendOwnerNotification({ userId, tier, tierDef, billingInterval, supabase });
     }
   }
 

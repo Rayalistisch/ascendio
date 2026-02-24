@@ -24,7 +24,33 @@ export async function GET(request: Request) {
     .order("sort_order", { ascending: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ topics: data ?? [] });
+
+  // Enrich topics with internal post IDs for SEO editor links
+  const topics = data ?? [];
+  const wpPostIds = topics
+    .filter((t) => t.wp_post_id != null)
+    .map((t) => t.wp_post_id as number);
+
+  let postIdMap: Record<number, string> = {};
+  if (wpPostIds.length > 0) {
+    const { data: posts } = await supabase
+      .from("asc_wp_posts")
+      .select("id, wp_post_id")
+      .in("wp_post_id", wpPostIds);
+
+    if (posts) {
+      for (const post of posts) {
+        postIdMap[post.wp_post_id] = post.id;
+      }
+    }
+  }
+
+  const enrichedTopics = topics.map((t) => ({
+    ...t,
+    internal_post_id: t.wp_post_id ? postIdMap[t.wp_post_id] ?? null : null,
+  }));
+
+  return NextResponse.json({ topics: enrichedTopics });
 }
 
 export async function POST(request: Request) {

@@ -31,38 +31,40 @@ export function LandingPricing({ headingClassName = "" }: LandingPricingProps) {
           <p className="mt-3 text-sm leading-relaxed text-white/60 md:text-base">
             Elk plan bevat maandelijkse credits. Schaal op wanneer je groeit.
           </p>
+
+          {/* Toggle */}
+          <div className="mt-8 inline-flex items-center rounded-full border border-white/15 bg-white/5 p-1">
+            <button
+              type="button"
+              onClick={() => setBillingInterval("monthly")}
+              className={`rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.1em] transition ${
+                billingInterval === "monthly"
+                  ? "bg-white text-slate-950 shadow-sm"
+                  : "text-white/60 hover:text-white"
+              }`}
+            >
+              Maandelijks
+            </button>
+            <button
+              type="button"
+              onClick={() => setBillingInterval("yearly")}
+              className={`rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.1em] transition ${
+                billingInterval === "yearly"
+                  ? "bg-white text-slate-950 shadow-sm"
+                  : "text-white/60 hover:text-white"
+              }`}
+            >
+              Jaarlijks
+              <span className="ml-1.5 inline-flex rounded-full bg-emerald-400/20 px-1.5 py-0.5 text-[9px] font-bold text-emerald-300">
+                -{getYearlyFreeMonths()} mnd
+              </span>
+            </button>
+          </div>
         </div>
 
-        <div className="mx-auto mt-8 flex max-w-md items-center justify-between rounded-xl border border-white/15 bg-white/5 p-2">
-          <button
-            type="button"
-            onClick={() => setBillingInterval("monthly")}
-            className={`rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition ${
-              billingInterval === "monthly"
-                ? "bg-white text-slate-950"
-                : "text-white/70 hover:text-white"
-            }`}
-          >
-            Maandelijks
-          </button>
-          <button
-            type="button"
-            onClick={() => setBillingInterval("yearly")}
-            className={`rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition ${
-              billingInterval === "yearly"
-                ? "bg-white text-slate-950"
-                : "text-white/70 hover:text-white"
-            }`}
-          >
-            Jaarlijks
-          </button>
-        </div>
-
-        {billingInterval === "yearly" && (
-          <p className="mx-auto mt-3 max-w-md rounded-lg border border-emerald-300/40 bg-emerald-400/15 px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200">
-            {getYearlyFreeMonths()} maanden gratis bij jaarlijkse facturatie
-          </p>
-        )}
+        <p className="mt-4 text-sm text-white/50">
+          Alle plannen starten met een <strong className="text-white/80">7 dagen gratis trial</strong> · 10 credits · Geen creditcard nodig
+        </p>
 
         <div className="mt-10 grid gap-4 md:grid-cols-3">
           {TIERS.map((tier, index) => (
@@ -92,7 +94,7 @@ export function LandingPricing({ headingClassName = "" }: LandingPricingProps) {
               {billingInterval === "yearly" && (
                 <p
                   className={`mt-1 text-xs ${
-                    index === 1 ? "text-slate-500" : "text-white/60"
+                    index === 1 ? "text-slate-500" : "text-white/50"
                   }`}
                 >
                   {getTierSecondaryPriceLabel(tier, billingInterval)}
@@ -121,7 +123,7 @@ export function LandingPricing({ headingClassName = "" }: LandingPricingProps) {
               </ul>
 
               <Link
-                href={`/login?mode=signup&interval=${billingInterval}`}
+                href="/login?mode=signup"
                 className={`mt-6 inline-flex w-full items-center justify-center rounded-lg px-5 py-2.5 text-sm font-semibold transition ${
                   index === 1
                     ? "bg-slate-950 text-white hover:bg-slate-800"

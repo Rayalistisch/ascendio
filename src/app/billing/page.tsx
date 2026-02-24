@@ -2,30 +2,15 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { BillingPlans } from "@/components/billing-plans";
 import {
-  type BillingInterval,
   TIERS,
   isActiveSubscriptionStatus,
   isDevBillingBypassEnabled,
-  isStripeCheckoutEnabledForInterval,
 } from "@/lib/billing";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
-interface BillingPageProps {
-  searchParams: Promise<{ interval?: string | string[] }>;
-}
-
-export default async function BillingPage({ searchParams }: BillingPageProps) {
-  const resolvedSearchParams = await searchParams;
-  const intervalParam = Array.isArray(resolvedSearchParams.interval)
-    ? resolvedSearchParams.interval[0]
-    : resolvedSearchParams.interval;
-  const initialBillingInterval: BillingInterval =
-    intervalParam === "yearly" ? "yearly" : "monthly";
-  const allowMonthlyCheckout = isStripeCheckoutEnabledForInterval("monthly");
-  const allowYearlyCheckout = isStripeCheckoutEnabledForInterval("yearly");
-
+export default async function BillingPage() {
   const billingBypass = isDevBillingBypassEnabled();
   const supabase = await createClient();
   const {
@@ -84,9 +69,6 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
           tiers={TIERS}
           activeTierId={subscription?.tier || null}
           subscriptionStatus={subscription?.status || null}
-          initialBillingInterval={initialBillingInterval}
-          allowMonthlyCheckout={allowMonthlyCheckout}
-          allowYearlyCheckout={allowYearlyCheckout}
         />
       </div>
     </main>

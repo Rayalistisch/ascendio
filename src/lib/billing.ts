@@ -85,11 +85,22 @@ const TIER_FEATURES: Record<TierId, GatedFeature[]> = {
   business: ["clusters", "social", "tone_of_voice", "team"],
 };
 
+// Legacy tier names from before the rename (growth → pro, scale → business)
+const LEGACY_TIER_MAP: Record<string, TierId> = {
+  growth: "pro",
+  scale: "business",
+};
+
+export function normalizeTierId(tier: string | null | undefined): TierId | null {
+  if (!tier) return null;
+  if (tier in TIER_FEATURES) return tier as TierId;
+  return LEGACY_TIER_MAP[tier] ?? null;
+}
+
 export function tierHasFeature(tier: TierId | string | null | undefined, feature: GatedFeature): boolean {
-  if (!tier) return false;
-  const features = TIER_FEATURES[tier as TierId];
-  if (!features) return false;
-  return features.includes(feature);
+  const normalized = normalizeTierId(tier as string);
+  if (!normalized) return false;
+  return TIER_FEATURES[normalized].includes(feature);
 }
 
 export interface SubscriptionRecord {
@@ -100,7 +111,9 @@ export interface SubscriptionRecord {
 }
 
 export function getTierById(tierId: string): TierDefinition | undefined {
-  return TIERS.find((tier) => tier.id === tierId);
+  const normalized = normalizeTierId(tierId);
+  if (!normalized) return undefined;
+  return TIERS.find((tier) => tier.id === normalized);
 }
 
 export function getPriceIdForTier(

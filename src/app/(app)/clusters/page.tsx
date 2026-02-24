@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { TiptapEditor } from "@/components/tiptap-editor";
 import { Badge } from "@/components/ui/badge";
 import { NativeSelect } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,7 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { KeywordInput } from "@/components/keyword-input";
-import { Plus, Trash2, Sparkles, Play, ExternalLink, Globe } from "lucide-react";
+import { Plus, Trash2, Sparkles, Play, ExternalLink, Globe, Pencil, Save, X, FileEdit } from "lucide-react";
+import Link from "next/link";
 import {
   DEFAULT_GENERATION_SETTINGS,
   normalizeGenerationSettings,
@@ -61,6 +63,7 @@ interface ClusterTopic {
   sort_order: number;
   status: string;
   wp_post_url: string | null;
+  internal_post_id: string | null;
 }
 
 interface Suggestion {
@@ -196,6 +199,20 @@ export default function ClustersPage() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("details");
   const [savingSettings, setSavingSettings] = useState(false);
 
+  // Cluster editing (expanded view)
+  const [editClusterName, setEditClusterName] = useState("");
+  const [editClusterPillar, setEditClusterPillar] = useState("");
+  const [editClusterDescription, setEditClusterDescription] = useState("");
+  const [editClusterKeywords, setEditClusterKeywords] = useState<string[]>([]);
+  const [savingCluster, setSavingCluster] = useState(false);
+
+  // Topic editing
+  const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
+  const [editTopicTitle, setEditTopicTitle] = useState("");
+  const [editTopicDescription, setEditTopicDescription] = useState("");
+  const [editTopicKeywords, setEditTopicKeywords] = useState<string[]>([]);
+  const [savingTopic, setSavingTopic] = useState(false);
+
   // Content type for new cluster
   const [newContentType, setNewContentType] = useState("pages");
 
@@ -266,8 +283,18 @@ export default function ClustersPage() {
       return;
     }
     setExpandedId(clusterId);
+    setEditingTopicId(null);
     setSuggestions([]);
     setSitemapOverlaps([]);
+
+    // Populate cluster edit state
+    const c = clusters.find((item) => item.id === clusterId);
+    if (c) {
+      setEditClusterName(c.name);
+      setEditClusterPillar(c.pillar_topic);
+      setEditClusterDescription(c.pillar_description ?? "");
+      setEditClusterKeywords(c.pillar_keywords ?? []);
+    }
     await fetchTopics(clusterId);
 
     // Fetch sitemap overlaps for this cluster
@@ -526,6 +553,69 @@ export default function ClustersPage() {
     }
   }
 
+  async function saveClusterDetails(clusterId: string) {
+    setSavingCluster(true);
+    try {
+      const res = await fetch("/api/clusters", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: clusterId,
+          name: editClusterName,
+          pillarTopic: editClusterPillar,
+          pillarDescription: editClusterDescription || null,
+          pillarKeywords: editClusterKeywords,
+        }),
+      });
+      if (res.ok) {
+        setClusters((prev) =>
+          prev.map((c) =>
+            c.id === clusterId
+              ? {
+                  ...c,
+                  name: editClusterName,
+                  pillar_topic: editClusterPillar,
+                  pillar_description: editClusterDescription || null,
+                  pillar_keywords: editClusterKeywords,
+                }
+              : c
+          )
+        );
+      }
+    } finally {
+      setSavingCluster(false);
+    }
+  }
+
+  function startEditTopic(topic: ClusterTopic) {
+    setEditingTopicId(topic.id);
+    setEditTopicTitle(topic.title);
+    setEditTopicDescription(topic.description ?? "");
+    setEditTopicKeywords(topic.target_keywords ?? []);
+  }
+
+  async function saveTopic(topicId: string, clusterId: string) {
+    setSavingTopic(true);
+    try {
+      const res = await fetch("/api/clusters/topics", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: topicId,
+          title: editTopicTitle,
+          description: editTopicDescription || null,
+          targetKeywords: editTopicKeywords,
+        }),
+      });
+      if (res.ok) {
+        setEditingTopicId(null);
+        await fetchTopics(clusterId);
+      }
+    } finally {
+      setSavingTopic(false);
+    }
+  }
+
   const retryableTopicCount = topics.filter((t) => t.status === "pending" || t.status === "failed").length;
 
   return (
@@ -577,7 +667,7 @@ export default function ClustersPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Beschrijving (optioneel)</Label>
-                  <Textarea value={newDescription} onChange={(e) => setNewDescription(e.target.value)} placeholder="Wat moet het pillar artikel behandelen?" rows={2} />
+                  <TiptapEditor content={newDescription} onChange={setNewDescription} placeholder="Wat moet het pillar artikel behandelen?" />
                 </div>
                 <div className="space-y-2">
                   <Label>Pillar zoekwoorden</Label>
@@ -1078,6 +1168,51 @@ export default function ClustersPage() {
                     <Skeleton className="h-8 w-full" />
                   ) : (
                     <>
+                      {/* Cluster details editing */}
+                      <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-semibold">Cluster details</Label>
+                          <Button
+                            size="sm"
+                            onClick={() => saveClusterDetails(cluster.id)}
+                            disabled={savingCluster}
+                          >
+                            <Save className="h-3.5 w-3.5 mr-1" />
+                            {savingCluster ? "Opslaan..." : "Opslaan"}
+                          </Button>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Clusternaam</Label>
+                            <Input
+                              value={editClusterName}
+                              onChange={(e) => setEditClusterName(e.target.value)}
+                              placeholder="Bijv. Webdesign"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Pillar topic</Label>
+                            <Input
+                              value={editClusterPillar}
+                              onChange={(e) => setEditClusterPillar(e.target.value)}
+                              placeholder="Hoofdonderwerp"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Beschrijving</Label>
+                          <TiptapEditor
+                            content={editClusterDescription}
+                            onChange={setEditClusterDescription}
+                            placeholder="Wat moet het pillar artikel behandelen?"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Pillar zoekwoorden</Label>
+                          <KeywordInput keywords={editClusterKeywords} onChange={setEditClusterKeywords} />
+                        </div>
+                      </div>
+
                       <div className="space-y-2">
                         <Label className="text-xs font-semibold">Template voor dit cluster</Label>
                         <NativeSelect
@@ -1129,35 +1264,97 @@ export default function ClustersPage() {
                       {topics.length > 0 ? (
                         <div className="space-y-2">
                           {topics.map((topic) => (
-                            <div key={topic.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium truncate">{topic.title}</span>
-                                  <Badge variant={STATUS_MAP[topic.status]?.variant ?? "secondary"} className="text-xs shrink-0">
-                                    {STATUS_MAP[topic.status]?.label ?? topic.status}
-                                  </Badge>
+                            <div key={topic.id} className="rounded-lg border">
+                              <div className="flex items-center justify-between px-3 py-2">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium truncate">{topic.title}</span>
+                                    <Badge variant={STATUS_MAP[topic.status]?.variant ?? "secondary"} className="text-xs shrink-0">
+                                      {STATUS_MAP[topic.status]?.label ?? topic.status}
+                                    </Badge>
+                                  </div>
+                                  {topic.target_keywords.length > 0 && (
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      {topic.target_keywords.join(", ")}
+                                    </p>
+                                  )}
                                 </div>
-                                {topic.target_keywords.length > 0 && (
-                                  <p className="text-xs text-muted-foreground mt-0.5">
-                                    {topic.target_keywords.join(", ")}
-                                  </p>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1 shrink-0">
-                                {topic.wp_post_url && (
-                                  <a
-                                    href={topic.wp_post_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground"
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                      editingTopicId === topic.id
+                                        ? setEditingTopicId(null)
+                                        : startEditTopic(topic)
+                                    }
                                   >
-                                    <ExternalLink className="h-4 w-4" />
-                                  </a>
-                                )}
-                                <Button variant="ghost" size="sm" onClick={() => deleteTopic(topic.id, cluster.id)} className="text-destructive">
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                    {editingTopicId === topic.id ? (
+                                      <X className="h-4 w-4" />
+                                    ) : (
+                                      <Pencil className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                  {topic.internal_post_id && (
+                                    <Link
+                                      href={`/seo-editor/${topic.internal_post_id}`}
+                                      className="inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground"
+                                      title="Inhoud bewerken in SEO Editor"
+                                    >
+                                      <FileEdit className="h-4 w-4" />
+                                    </Link>
+                                  )}
+                                  {topic.wp_post_url && (
+                                    <a
+                                      href={topic.wp_post_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground"
+                                      title="Bekijk op WordPress"
+                                    >
+                                      <ExternalLink className="h-4 w-4" />
+                                    </a>
+                                  )}
+                                  <Button variant="ghost" size="sm" onClick={() => deleteTopic(topic.id, cluster.id)} className="text-destructive">
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
                               </div>
+                              {editingTopicId === topic.id && (
+                                <div className="border-t bg-muted/20 px-3 py-3 space-y-3">
+                                  <div className="space-y-1.5">
+                                    <Label className="text-xs">Titel</Label>
+                                    <Input
+                                      value={editTopicTitle}
+                                      onChange={(e) => setEditTopicTitle(e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <Label className="text-xs">Beschrijving</Label>
+                                    <Textarea
+                                      value={editTopicDescription}
+                                      onChange={(e) => setEditTopicDescription(e.target.value)}
+                                      placeholder="Korte beschrijving van dit subtopic..."
+                                      rows={2}
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <Label className="text-xs">Zoekwoorden</Label>
+                                    <KeywordInput
+                                      keywords={editTopicKeywords}
+                                      onChange={setEditTopicKeywords}
+                                    />
+                                  </div>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => saveTopic(topic.id, cluster.id)}
+                                    disabled={savingTopic || !editTopicTitle.trim()}
+                                  >
+                                    <Save className="h-3.5 w-3.5 mr-1" />
+                                    {savingTopic ? "Opslaan..." : "Opslaan"}
+                                  </Button>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>

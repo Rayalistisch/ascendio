@@ -42,6 +42,20 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     }
   }
 
+  if (!activeSiteId) {
+    const { data: firstSite } = await supabase
+      .from("asc_sites")
+      .select("id, name")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (firstSite) {
+      activeSiteId = firstSite.id;
+      activeSiteName = firstSite.name;
+    }
+  }
+
   const withSiteFilter = <T,>(query: T): T => {
     if (!activeSiteId) return query;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

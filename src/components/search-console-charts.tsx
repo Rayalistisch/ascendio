@@ -72,16 +72,19 @@ export function SearchConsoleCharts({ siteId }: { siteId: string }) {
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [needsReconnect, setNeedsReconnect] = useState(false);
   const [days, setDays] = useState("28");
 
   const fetchReport = useCallback(async () => {
     if (!siteId) return;
     setLoading(true);
     setError(null);
+    setNeedsReconnect(false);
     try {
       const res = await fetch(`/api/search-console/report?siteId=${siteId}&days=${days}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
+        setNeedsReconnect(Boolean(body.needsReconnect));
         setError(body.error || "Kon data niet ophalen");
         setData(null);
         return;
@@ -119,9 +122,21 @@ export function SearchConsoleCharts({ siteId }: { siteId: string }) {
   if (error) {
     return (
       <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-        {error === "Search Console is niet gekoppeld voor deze site"
-          ? "Koppel Search Console in instellingen om hier statistieken te zien."
-          : error}
+        {error === "Search Console is niet gekoppeld voor deze site" ? (
+          "Koppel Search Console in instellingen om hier statistieken te zien."
+        ) : needsReconnect ? (
+          <div className="space-y-2">
+            <p>Search Console token is verlopen of ongeldig.</p>
+            <a
+              href={`/settings/search-console?siteId=${encodeURIComponent(siteId)}`}
+              className="inline-flex rounded-md border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+            >
+              Opnieuw koppelen
+            </a>
+          </div>
+        ) : (
+          error
+        )}
       </div>
     );
   }

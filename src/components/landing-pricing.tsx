@@ -5,8 +5,6 @@ import { useState } from "react";
 import { Check } from "lucide-react";
 import {
   TIERS,
-  getTierPriceLabel,
-  getTierSecondaryPriceLabel,
   getYearlyFreeMonths,
   type BillingInterval,
 } from "@/lib/billing";
@@ -15,32 +13,71 @@ interface LandingPricingProps {
   headingClassName?: string;
 }
 
+const cardThemes = [
+  {
+    bg: "bg-[#fff4f2]",
+    border: "border-[#fde4df]",
+    dot: "rgba(244,114,98,0.18)",
+    button: "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50",
+    badge: null,
+    featuresLabel: "Inclusief in Starter:",
+  },
+  {
+    bg: "bg-[#f0f0fd]",
+    border: "border-[#d9d9fb]",
+    dot: "rgba(99,102,241,0.18)",
+    button: "bg-indigo-600 text-white hover:bg-indigo-700",
+    badge: "Meest gekozen",
+    featuresLabel: "Alles van Starter, plus:",
+  },
+  {
+    bg: "bg-[#f0f5fd]",
+    border: "border-[#d4e4fb]",
+    dot: "rgba(59,130,246,0.15)",
+    button: "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50",
+    badge: null,
+    featuresLabel: "Alles van Pro, plus:",
+  },
+];
+
 export function LandingPricing({ headingClassName = "" }: LandingPricingProps) {
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
 
   return (
-    <section id="pricing" className="bg-slate-950 py-16 text-white md:py-20">
+    <section id="pricing" className="bg-white py-20">
       <div className="mx-auto max-w-7xl px-6 md:px-10">
+
+        {/* Header */}
         <div className="mx-auto max-w-2xl text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/60">
+          <p className="text-xs font-semibold uppercase tracking-widest text-indigo-500">
             Pricing
           </p>
-          <h2 className={`${headingClassName} mt-4 text-3xl font-semibold md:text-4xl`}>
-            Kies je plan en schaal met credits
+          <h2 className={`${headingClassName} mt-3 text-3xl font-bold tracking-tight text-slate-900 md:text-4xl`}>
+            Kies je plan
           </h2>
-          <p className="mt-3 text-sm leading-relaxed text-white/60 md:text-base">
+          <p className="mt-3 text-base leading-relaxed text-slate-500">
             Elk plan bevat maandelijkse credits. Schaal op wanneer je groeit.
           </p>
+        </div>
 
-          {/* Toggle */}
-          <div className="mt-8 inline-flex items-center rounded-full border border-white/15 bg-white/5 p-1">
+        {/* Trial badge */}
+        <div className="mt-6 flex justify-center">
+          <span className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-1.5 text-xs font-semibold text-white">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            7 dagen gratis trial · 10 credits · Geen creditcard nodig
+          </span>
+        </div>
+
+        {/* Toggle */}
+        <div className="mt-6 flex justify-center">
+          <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 p-1">
             <button
               type="button"
               onClick={() => setBillingInterval("monthly")}
-              className={`rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.1em] transition ${
+              className={`rounded-full px-5 py-2 text-xs font-semibold transition ${
                 billingInterval === "monthly"
-                  ? "bg-white text-slate-950 shadow-sm"
-                  : "text-white/60 hover:text-white"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-400 hover:text-slate-700"
               }`}
             >
               Maandelijks
@@ -48,92 +85,85 @@ export function LandingPricing({ headingClassName = "" }: LandingPricingProps) {
             <button
               type="button"
               onClick={() => setBillingInterval("yearly")}
-              className={`rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.1em] transition ${
+              className={`rounded-full px-5 py-2 text-xs font-semibold transition ${
                 billingInterval === "yearly"
-                  ? "bg-white text-slate-950 shadow-sm"
-                  : "text-white/60 hover:text-white"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-400 hover:text-slate-700"
               }`}
             >
               Jaarlijks
-              <span className="ml-1.5 inline-flex rounded-full bg-emerald-400/20 px-1.5 py-0.5 text-[9px] font-bold text-emerald-300">
+              <span className="ml-1.5 inline-flex rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">
                 -{getYearlyFreeMonths()} mnd
               </span>
             </button>
           </div>
         </div>
 
-        <p className="mt-4 text-sm text-white/50">
-          Alle plannen starten met een <strong className="text-white/80">7 dagen gratis trial</strong> · 10 credits · Geen creditcard nodig
-        </p>
+        {/* Cards */}
+        <div className="mt-10 grid gap-5 md:grid-cols-3">
+          {TIERS.map((tier, index) => {
+            const theme = cardThemes[index];
+            const price = billingInterval === "yearly" ? tier.priceYearly : tier.priceMonthly;
+            const unit = billingInterval === "yearly" ? "/ jaar" : "/ maand";
+            const perMonth = billingInterval === "yearly"
+              ? Math.round(tier.priceYearly / 12)
+              : null;
 
-        <div className="mt-10 grid gap-4 md:grid-cols-3">
-          {TIERS.map((tier, index) => (
-            <article
-              key={tier.id}
-              className={`relative rounded-2xl border p-5 ${
-                index === 1
-                  ? "border-sky-400 bg-white text-slate-900 shadow-lg shadow-sky-400/20"
-                  : "border-white/15 bg-white/5"
-              }`}
-            >
-              {index === 1 && (
-                <span className="absolute -top-2.5 left-5 rounded-full bg-sky-400 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-950">
-                  Meest gekozen
-                </span>
-              )}
-              <p
-                className={`text-xs font-semibold uppercase tracking-[0.14em] ${
-                  index === 1 ? "text-sky-600" : "text-white/50"
-                }`}
+            return (
+              <article
+                key={tier.id}
+                className={`relative overflow-hidden rounded-3xl border p-7 ${theme.bg} ${theme.border}`}
+                style={{
+                  backgroundImage: `radial-gradient(${theme.dot} 1.5px, transparent 1.5px)`,
+                  backgroundSize: "22px 22px",
+                }}
               >
-                {tier.name}
-              </p>
-              <p className={`${headingClassName} mt-3 text-3xl font-semibold`}>
-                {getTierPriceLabel(tier, billingInterval)}
-              </p>
-              {billingInterval === "yearly" && (
-                <p
-                  className={`mt-1 text-xs ${
-                    index === 1 ? "text-slate-500" : "text-white/50"
-                  }`}
-                >
-                  {getTierSecondaryPriceLabel(tier, billingInterval)}
+                {theme.badge && (
+                  <span className="absolute right-5 top-5 rounded-full bg-indigo-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    {theme.badge}
+                  </span>
+                )}
+
+                <p className="text-xl font-bold text-slate-900">{tier.name}</p>
+
+                <p className="mt-3 text-xs font-medium text-slate-400">Vanaf</p>
+                <div className="mt-1 flex items-end gap-1.5">
+                  <span className="text-5xl font-extrabold leading-none tracking-tight text-slate-900">
+                    €{price}
+                  </span>
+                  <span className="mb-1 text-sm font-medium text-slate-400">{unit}</span>
+                </div>
+                {perMonth && (
+                  <p className="mt-1 text-xs text-slate-400">≈ €{perMonth} / maand</p>
+                )}
+
+                <p className="mt-3 text-sm leading-relaxed text-slate-500">
+                  {tier.description}
                 </p>
-              )}
-              <p
-                className={`mt-2 text-sm leading-relaxed ${
-                  index === 1 ? "text-slate-500" : "text-white/60"
-                }`}
-              >
-                {tier.description}
-              </p>
 
-              <ul className="mt-5 space-y-2">
-                {tier.features.map((feature) => (
-                  <li
-                    key={feature}
-                    className={`flex items-start gap-2 text-sm ${
-                      index === 1 ? "text-slate-600" : "text-white/75"
-                    }`}
-                  >
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-sky-400" />
-                    {feature}
-                  </li>
-                ))}
-              </ul>
+                <Link
+                  href="/login?mode=signup"
+                  className={`mt-5 flex w-full items-center justify-center rounded-xl py-3 text-sm font-semibold transition ${theme.button}`}
+                >
+                  Aan de slag
+                </Link>
 
-              <Link
-                href="/login?mode=signup"
-                className={`mt-6 inline-flex w-full items-center justify-center rounded-lg px-5 py-2.5 text-sm font-semibold transition ${
-                  index === 1
-                    ? "bg-slate-950 text-white hover:bg-slate-800"
-                    : "border border-white/20 text-white hover:bg-white/10"
-                }`}
-              >
-                Aan de slag
-              </Link>
-            </article>
-          ))}
+                <div className="my-5 border-t border-slate-200/70" />
+
+                <p className="mb-3 text-xs font-semibold text-slate-400">
+                  {theme.featuresLabel}
+                </p>
+                <ul className="space-y-2.5">
+                  {tier.features.map((feature) => (
+                    <li key={feature} className="flex items-start gap-2.5 text-sm text-slate-600">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            );
+          })}
         </div>
       </div>
     </section>

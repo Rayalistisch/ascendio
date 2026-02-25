@@ -3,7 +3,7 @@ import {
   findExternalPlagiarismMatches,
   type ExternalPlagiarismMatch,
 } from "@/lib/external-plagiarism";
-import { fetchPageHtml, parseSeoFromHtml } from "@/lib/wordpress";
+import { parseSeoFromHtml } from "@/lib/wordpress";
 
 export interface ScanIssue {
   wpPostId?: number;
@@ -445,21 +445,18 @@ export async function scanSite(
     })
   );
 
-  // Pre-fetch SEO meta for all pages in parallel (max 8 concurrent) to avoid sequential delays
-  const CONCURRENCY = 8;
-  const seoMetaMap = new Map<string, { title: string | null; description: string | null }>();
+  // Pre-fetch rendered HTML for all pages in parallel (max 10 concurrent, 4s timeout)
+  // Used for both SEO meta and schema detection — avoids any sequential HTTP calls in analyzePage
+  const CONCURRENCY = 10;
+  const htmlByUrl = new Map<string, string>();
   for (let i = 0; i < posts.length; i += CONCURRENCY) {
     const batch = posts.slice(i, i + CONCURRENCY);
     await Promise.all(
       batch.map(async (post) => {
         const url = post.link || "";
         if (!url) return;
-        try {
-          const html = await fetchPageHtml(url);
-          seoMetaMap.set(url, parseSeoFromHtml(html));
-        } catch {
-          // page unreachable — analyzePage will fall back to excerpt
-        }
+        const html = await fetchRenderedHtml(url, 4000);
+        if (html) htmlByUrl.set(url, html);
       })
     );
   }
@@ -468,12 +465,13 @@ export async function scanSite(
   for (let index = 0; index < posts.length; index++) {
     const post = posts[index];
     const summary = summaries[index];
-    const issues = await analyzePage(
+    const renderedHtml = htmlByUrl.get(post.link || "") ?? null;
+    const issues = analyzePage(
       post,
       summaries,
       plagiarismMatchesByPostId.get(summary.id) || [],
       externalPlagiarismByPostId.get(summary.id) || [],
-      seoMetaMap.get(post.link || "") ?? null
+      renderedHtml
     );
     allIssues.push(...issues);
   }
@@ -481,13 +479,13 @@ export async function scanSite(
   return { pagesScanned: posts.length, issues: allIssues };
 }
 
-export async function analyzePage(
+export function analyzePage(
   post: Record<string, any>,
   allPosts: PageSummary[],
   plagiarismMatches: PlagiarismMatch[] = [],
   externalPlagiarismMatches: ExternalPlagiarismMatch[] = [],
-  prefetchedSeoMeta: { title: string | null; description: string | null } | null = null
-): Promise<ScanIssue[]> {
+  prefetchedHtml: string | null = null
+): ScanIssue[] {
   const issues: ScanIssue[] = [];
   const html = typeof post.content === "object" ? post.content.rendered : post.content || "";
   const postTitle = typeof post.title === "object" ? post.title.rendered : post.title;
@@ -545,8 +543,9 @@ export async function analyzePage(
 
   // 4. Missing meta description + missing meta title (via pre-fetched page HTML)
   {
-    let seoTitle: string | null = prefetchedSeoMeta?.title ?? null;
-    let seoDescription: string | null = prefetchedSeoMeta?.description ?? null;
+    const parsedSeo = prefetchedHtml ? parseSeoFromHtml(prefetchedHtml) : null;
+    let seoTitle: string | null = parsedSeo?.title ?? null;
+    let seoDescription: string | null = parsedSeo?.description ?? null;
 
     // Fall back to WP excerpt if HTML parse gave nothing
     if (!seoDescription) {
@@ -616,12 +615,10 @@ export async function analyzePage(
   }
 
   // 7. Missing schema check (JSON-LD, Microdata and RDFa schema.org types)
+  // Check WP content first, then fall back to the pre-fetched rendered HTML
   let schemaTypes = extractSchemaTypesFromHtml(html);
-  if (schemaTypes.length === 0 && postUrl) {
-    const renderedHtml = await fetchRenderedHtml(postUrl);
-    if (renderedHtml) {
-      schemaTypes = extractSchemaTypesFromHtml(renderedHtml);
-    }
+  if (schemaTypes.length === 0 && prefetchedHtml) {
+    schemaTypes = extractSchemaTypesFromHtml(prefetchedHtml);
   }
 
   if (schemaTypes.length === 0) {

@@ -5,57 +5,31 @@ const sections = [
     title: "Sites",
     description: "Beheer WordPress-sites, credentials en basisconfiguratie.",
     href: "/sites",
-    cta: "Open Sites",
     siteScoped: false,
   },
   {
     title: "Templates",
     description: "Stel standaard artikelstructuren in per site of cluster.",
     href: "/templates",
-    cta: "Open Templates",
     siteScoped: true,
   },
   {
     title: "Bronnen",
     description: "Beheer RSS, nieuws en keyword-bronnen voor content input.",
     href: "/sources",
-    cta: "Open Bronnen",
     siteScoped: true,
   },
   {
     title: "Planning",
     description: "Configureer automatische publicatiefrequenties en schema's.",
     href: "/schedule",
-    cta: "Open Planning",
     siteScoped: true,
   },
   {
     title: "Indexering",
     description: "Bekijk en beheer requests voor Google Indexing.",
     href: "/indexing",
-    cta: "Open Indexering",
     siteScoped: true,
-  },
-  {
-    title: "Search Console",
-    description: "Koppel Google Search Console (OAuth) voor query- en performance-data.",
-    href: "/settings/search-console",
-    cta: "Open Search Console",
-    siteScoped: true,
-  },
-  {
-    title: "Team & Rechten",
-    description: "Voeg subgebruikers toe aan deze workspace en stel rollen in.",
-    href: "/settings/team",
-    cta: "Open Teambeheer",
-    siteScoped: true,
-  },
-  {
-    title: "Abonnement",
-    description: "Bekijk je plan, credits en facturatie-informatie.",
-    href: "/billing",
-    cta: "Open Billing",
-    siteScoped: false,
   },
 ];
 
@@ -76,29 +50,35 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Instellingen</h1>
-        <p className="text-muted-foreground mt-1">
-          Centrale plek voor account-, content- en publicatie-instellingen.
+        <h1 className="text-xl font-semibold tracking-tight">Overzicht</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Snelle toegang tot alle module-instellingen.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {sections.map((section) => (
-          <div
+      <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+        {sections.map((section, index) => (
+          <Link
             key={section.href}
-            className="rounded-xl border bg-card p-4 shadow-sm"
+            href={withSiteHref(section.href, section.siteScoped)}
+            className={`flex items-center justify-between px-5 py-4 hover:bg-muted/40 transition-colors ${
+              index !== 0 ? "border-t" : ""
+            }`}
           >
-            <h2 className="font-semibold">{section.title}</h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {section.description}
-            </p>
-            <Link
-              href={withSiteHref(section.href, section.siteScoped)}
-              className="inline-flex mt-3 text-sm font-medium text-primary hover:underline"
+            <div>
+              <p className="text-sm font-medium">{section.title}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{section.description}</p>
+            </div>
+            <svg
+              className="h-4 w-4 text-muted-foreground/50 shrink-0"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
             >
-              {section.cta}
-            </Link>
-          </div>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
         ))}
       </div>
     </div>

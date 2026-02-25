@@ -94,8 +94,8 @@ export async function POST(request: Request) {
   const params = new URLSearchParams({
     mode: "subscription",
     customer: stripeCustomerId,
-    success_url: `${baseUrl}/billing?success=1&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${baseUrl}/billing?canceled=1`,
+    success_url: `${baseUrl}/settings/billing?success=1&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${baseUrl}/settings/billing?canceled=1`,
     "line_items[0][price]": priceId,
     "line_items[0][quantity]": "1",
     "metadata[user_id]": user.id,

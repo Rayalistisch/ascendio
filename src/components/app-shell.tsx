@@ -422,7 +422,7 @@ export function AppShell({
                 </Link>
               )}
               <Link
-                href="/billing"
+                href="/settings/billing"
                 className="mt-1 flex items-center gap-2 rounded-md px-2 py-2 text-xs font-medium text-foreground hover:bg-accent"
               >
                 <CreditCard className="h-4 w-4" />
@@ -495,7 +495,7 @@ export function AppShell({
               en {credits.remaining} credits over.
             </span>
             <Link
-              href="/billing"
+              href="/settings/billing"
               className="shrink-0 rounded-full bg-amber-800 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700"
             >
               Upgrade nu

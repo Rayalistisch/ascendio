@@ -2,7 +2,7 @@ import { createHmac } from "crypto";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTierById, getTierByPriceId, TierId, type TierDefinition } from "@/lib/billing";
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
 async function sendOwnerNotification({
   userId,
@@ -18,13 +18,11 @@ async function sendOwnerNotification({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any;
 }) {
-  const gmailUser = process.env.GMAIL_USER;       // bijv. ascendio@luminx.nl
-  const gmailPass = process.env.GMAIL_APP_PASSWORD; // Google app-wachtwoord
-  const notifyEmail = process.env.OWNER_NOTIFY_EMAIL ?? gmailUser;
+  const apiKey = process.env.RESEND_API_KEY;
+  const notifyEmail = process.env.OWNER_NOTIFY_EMAIL;
 
-  if (!gmailUser || !gmailPass || !notifyEmail) return;
+  if (!apiKey || !notifyEmail) return;
 
-  // Look up user email
   const { data: { user } } = await supabase.auth.admin.getUserById(userId);
   const userEmail = user?.email ?? "onbekend";
 
@@ -35,15 +33,9 @@ async function sendOwnerNotification({
     : `€${tierDef?.priceMonthly ?? "?"}/maand`;
 
   try {
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: { user: gmailUser, pass: gmailPass },
-    });
-
-    await transporter.sendMail({
-      from: `"Ascendio" <${gmailUser}>`,
+    const resend = new Resend(apiKey);
+    await resend.emails.send({
+      from: "Ascendio <onboarding@resend.dev>",
       to: notifyEmail,
       subject: `🎉 Nieuwe klant: ${userEmail} (${tierName})`,
       html: `

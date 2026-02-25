@@ -203,8 +203,8 @@ export default function TeamSettingsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Team & Rechten</h1>
-          <p className="mt-1 text-muted-foreground">
+          <h1 className="text-xl font-semibold tracking-tight">Team & Rechten</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Beheer subgebruikers per workspace en wijs rollen toe.
           </p>
         </div>

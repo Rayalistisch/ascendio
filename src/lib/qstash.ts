@@ -190,7 +190,11 @@ export async function verifyQStashSignature(
   const nextKey = process.env.QSTASH_NEXT_SIGNING_KEY;
 
   if (!currentKey || !nextKey) {
-    console.warn("QStash signing keys not set — skipping signature verification");
+    if (process.env.NODE_ENV === "production") {
+      console.error("QStash signing keys missing in production — rejecting request");
+      return false;
+    }
+    console.warn("QStash signing keys not set — skipping signature verification (dev only)");
     return true;
   }
 

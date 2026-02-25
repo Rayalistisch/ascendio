@@ -18,10 +18,32 @@ export interface SourceItem {
   raw_content: string | null;
 }
 
+function isPrivateUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url);
+    return (
+      hostname === "localhost" ||
+      hostname === "0.0.0.0" ||
+      hostname === "::1" ||
+      /^127\./.test(hostname) ||
+      /^10\./.test(hostname) ||
+      /^192\.168\./.test(hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
+      hostname === "169.254.169.254" ||
+      hostname.endsWith(".local") ||
+      hostname.endsWith(".internal") ||
+      hostname.endsWith(".localhost")
+    );
+  } catch {
+    return true;
+  }
+}
+
 export async function fetchRSSItems(
   feedUrl: string,
   maxItems: number = 10
 ): Promise<RSSItem[]> {
+  if (isPrivateUrl(feedUrl)) throw new Error("RSS URL verwijst naar een intern netwerk (niet toegestaan)");
   const response = await fetch(feedUrl);
   if (!response.ok) throw new Error(`Failed to fetch RSS feed: ${response.status}`);
 

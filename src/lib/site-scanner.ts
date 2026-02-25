@@ -25,6 +25,52 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function extractLinks(html: string, pageUrl: string): string[] {
+  const regex = /<a[^>]*\shref=["']([^"']+)["']/gi;
+  const results: string[] = [];
+  let m;
+  while ((m = regex.exec(html)) !== null) {
+    const href = m[1].trim();
+    if (
+      !href ||
+      href.startsWith("#") ||
+      href.startsWith("mailto:") ||
+      href.startsWith("tel:") ||
+      href.startsWith("javascript:")
+    ) continue;
+    try {
+      const abs = href.startsWith("http") ? href : new URL(href, pageUrl).href;
+      results.push(abs);
+    } catch {
+      // skip malformed URLs
+    }
+  }
+  return results;
+}
+
+async function checkLinkStatus(url: string): Promise<number | null> {
+  try {
+    const res = await fetch(url, {
+      method: "HEAD",
+      redirect: "follow",
+      headers: { "User-Agent": "AscendioBot/1.0 (SEO scanner)" },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.status === 405) {
+      const get = await fetch(url, {
+        method: "GET",
+        redirect: "follow",
+        headers: { "User-Agent": "AscendioBot/1.0 (SEO scanner)" },
+        signal: AbortSignal.timeout(5000),
+      });
+      return get.status;
+    }
+    return res.status;
+  } catch {
+    return null; // timeout or network error
+  }
+}
+
 const JSON_LD_SCRIPT_REGEX =
   /<script\b[^>]*type=["'][^"']*application\/ld\+json[^"']*["'][^>]*>([\s\S]*?)<\/script>/gi;
 
@@ -474,6 +520,59 @@ export async function scanSite(
       renderedHtml
     );
     allIssues.push(...issues);
+  }
+
+  // Phase 3: Dead link check
+  const MAX_LINKS = 150;
+  const LINK_CONCURRENCY = 10;
+
+  // Collect links from WP post content per page (not rendered HTML — avoids nav/footer noise)
+  const urlToPages = new Map<string, string[]>();
+  for (const post of posts) {
+    const contentHtml =
+      typeof post.content === "object" ? post.content.rendered : post.content || "";
+    const pageUrl = post.link || "";
+    if (!pageUrl) continue;
+    for (const href of extractLinks(contentHtml, pageUrl)) {
+      const pages = urlToPages.get(href);
+      if (pages) {
+        pages.push(pageUrl);
+      } else {
+        urlToPages.set(href, [pageUrl]);
+      }
+    }
+  }
+
+  const uniqueLinks = [...urlToPages.keys()].slice(0, MAX_LINKS);
+
+  const statusMap = new Map<string, number | null>();
+  for (let i = 0; i < uniqueLinks.length; i += LINK_CONCURRENCY) {
+    const batch = uniqueLinks.slice(i, i + LINK_CONCURRENCY);
+    await Promise.all(
+      batch.map(async (url) => {
+        statusMap.set(url, await checkLinkStatus(url));
+      })
+    );
+  }
+
+  for (const [href, pages] of urlToPages) {
+    const status = statusMap.get(href);
+    if (status === undefined) continue; // not checked (beyond cap)
+    if (status !== null && status < 400) continue; // OK or redirect
+    const label = status !== null ? String(status) : "timeout";
+    for (const pageUrl of pages) {
+      const post = posts.find((p) => (p.link || "") === pageUrl);
+      allIssues.push({
+        wpPostId: post?.id,
+        pageUrl,
+        issueType: "broken_link",
+        severity: "warning",
+        description: `Gebroken link gevonden (${label}): ${href}`,
+        currentValue: `${href} (${label})`,
+        suggestedFix: "Verwijder of vervang deze link met een werkende URL.",
+        autoFixable: false,
+      });
+    }
   }
 
   return { pagesScanned: posts.length, issues: allIssues };

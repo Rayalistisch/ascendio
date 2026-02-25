@@ -388,6 +388,72 @@ export async function updateMedia(
   }
 }
 
+// ── SEO Meta (plugin-agnostic) ────────────────────────────────
+
+/** Fetch the raw HTML of a public page URL (no auth needed) */
+export async function fetchPageHtml(url: string): Promise<string> {
+  const res = await fetch(url, {
+    headers: { "User-Agent": "Ascendio-Scanner/1.0" },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch page HTML: ${res.status}`);
+  return res.text();
+}
+
+/** Parse <title> and <meta name="description"> from raw HTML */
+export function parseSeoFromHtml(html: string): {
+  title: string | null;
+  description: string | null;
+} {
+  const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+  const descMatch = html.match(
+    /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i
+  ) ?? html.match(
+    /<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["']/i
+  );
+  return {
+    title: titleMatch ? titleMatch[1].trim() || null : null,
+    description: descMatch ? descMatch[1].trim() || null : null,
+  };
+}
+
+/**
+ * Write SEO title and/or description to a WordPress post/page.
+ * Sends Yoast, RankMath and native WP fields in one request.
+ * WordPress silently ignores unknown meta keys, so this works
+ * regardless of which SEO plugin is installed.
+ */
+export async function updatePostSeoMeta(
+  creds: WPCredentials,
+  postId: number,
+  updates: { seoTitle?: string; seoDescription?: string },
+  options?: { collection?: WPCollection }
+): Promise<void> {
+  const collection = options?.collection ?? "posts";
+  const body: Record<string, unknown> = {
+    meta: {
+      // Yoast SEO
+      ...(updates.seoTitle ? { _yoast_wpseo_title: updates.seoTitle } : {}),
+      ...(updates.seoDescription ? { _yoast_wpseo_metadesc: updates.seoDescription } : {}),
+      // RankMath
+      ...(updates.seoTitle ? { rank_math_title: updates.seoTitle } : {}),
+      ...(updates.seoDescription ? { rank_math_description: updates.seoDescription } : {}),
+    },
+  };
+  // Native WP fallback fields
+  if (updates.seoDescription) body.excerpt = updates.seoDescription;
+
+  const response = await fetch(wpApiUrl(creds, `/${collection}/${postId}`), {
+    method: "POST",
+    headers: { Authorization: authHeader(creds), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Failed to update SEO meta: ${response.status} ${text.substring(0, 200)}`);
+  }
+}
+
 // ── Sitemap ──────────────────────────────────────────────────
 
 export interface SitemapEntry {

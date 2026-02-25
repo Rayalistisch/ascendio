@@ -1,6 +1,7 @@
 export const AUTO_FIX_ISSUE_TYPES = [
   "missing_alt",
   "missing_meta_description",
+  "missing_meta_title",
   "thin_content",
   "heading_hierarchy",
 ] as const;

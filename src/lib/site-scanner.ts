@@ -3,6 +3,7 @@ import {
   findExternalPlagiarismMatches,
   type ExternalPlagiarismMatch,
 } from "@/lib/external-plagiarism";
+import { fetchPageHtml, parseSeoFromHtml } from "@/lib/wordpress";
 
 export interface ScanIssue {
   wpPostId?: number;
@@ -521,19 +522,52 @@ export async function analyzePage(
     });
   }
 
-  // 4. Missing meta description (check excerpt as proxy)
-  const excerpt = typeof post.excerpt === "object" ? post.excerpt.rendered : post.excerpt || "";
-  const excerptText = stripHtml(excerpt);
-  if (!excerptText || excerptText.length < 50) {
-    issues.push({
-      wpPostId: post.id,
-      pageUrl: postUrl,
-      issueType: "missing_meta_description",
-      severity: "critical",
-      description: "Ontbrekende of te korte meta-beschrijving",
-      currentValue: excerptText || undefined,
-      autoFixable: isIssueTypeAutoFixable("missing_meta_description"),
-    });
+  // 4. Missing meta description + missing meta title (via actual page HTML)
+  {
+    let seoTitle: string | null = null;
+    let seoDescription: string | null = null;
+
+    try {
+      if (postUrl) {
+        const html = await fetchPageHtml(postUrl);
+        const parsed = parseSeoFromHtml(html);
+        seoTitle = parsed.title;
+        seoDescription = parsed.description;
+      }
+    } catch {
+      // HTML fetch failed — fall back to excerpt for description
+    }
+
+    // Fall back to WP excerpt if HTML parse gave nothing
+    if (!seoDescription) {
+      const excerpt = typeof post.excerpt === "object" ? post.excerpt.rendered : post.excerpt || "";
+      seoDescription = stripHtml(excerpt) || null;
+    }
+
+    if (!seoDescription || seoDescription.length < 50) {
+      issues.push({
+        wpPostId: post.id,
+        pageUrl: postUrl,
+        issueType: "missing_meta_description",
+        severity: "critical",
+        description: "Ontbrekende of te korte meta-beschrijving",
+        currentValue: seoDescription ?? undefined,
+        autoFixable: isIssueTypeAutoFixable("missing_meta_description"),
+      });
+    }
+
+    if (!seoTitle || seoTitle.length < 10) {
+      issues.push({
+        wpPostId: post.id,
+        pageUrl: postUrl,
+        issueType: "missing_meta_title",
+        severity: "critical",
+        description: "Ontbrekende of te korte SEO-paginatitel",
+        currentValue: seoTitle ?? undefined,
+        suggestedFix: "Genereer een SEO-titel van 50–60 tekens",
+        autoFixable: isIssueTypeAutoFixable("missing_meta_title"),
+      });
+    }
   }
 
   // 5. Title length check

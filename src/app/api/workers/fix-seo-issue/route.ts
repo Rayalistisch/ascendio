@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyQStashSignature } from "@/lib/qstash";
 import { decrypt } from "@/lib/encryption";
-import { fetchPage, fetchPost, updatePost, updateMedia } from "@/lib/wordpress";
+import { fetchPage, fetchPost, updatePost, updateMedia, updatePostSeoMeta } from "@/lib/wordpress";
 import { rewriteContentWithPrompt, generateAltText } from "@/lib/openai";
 import { checkCredits, deductCredits, CREDIT_COSTS } from "@/lib/credits";
 import { isIssueTypeAutoFixable } from "@/lib/seo-fix";
@@ -74,11 +74,31 @@ export async function POST(request: Request) {
         if (wpPost.featured_media) await updateMedia(creds, wpPost.featured_media, { alt_text: altText });
         break;
       }
-      case "missing_meta_description":
+      case "missing_meta_description": {
+        const result = await rewriteContentWithPrompt(
+          content,
+          "Write a compelling meta description for this page (plain text, 150–160 characters, no HTML tags)",
+          undefined,
+          site.tone_of_voice ?? null
+        );
+        const seoDescription = result.htmlContent.replace(/<[^>]*>/g, "").trim().slice(0, 160);
+        await updatePostSeoMeta(creds, issue.wp_post_id, { seoDescription }, { collection });
+        break;
+      }
+      case "missing_meta_title": {
+        const result = await rewriteContentWithPrompt(
+          `Title: ${title}\n\n${content.slice(0, 1500)}`,
+          "Write an SEO page title for this content (plain text, 50–60 characters, no HTML tags, no site name suffix)",
+          undefined,
+          site.tone_of_voice ?? null
+        );
+        const seoTitle = result.htmlContent.replace(/<[^>]*>/g, "").trim().slice(0, 60);
+        await updatePostSeoMeta(creds, issue.wp_post_id, { seoTitle }, { collection });
+        break;
+      }
       case "thin_content":
       case "heading_hierarchy": {
         const prompts: Record<string, string> = {
-          missing_meta_description: "Generate a compelling meta description for this content (150-160 chars)",
           thin_content: "Expand this content to at least 500 words while maintaining quality and relevance",
           heading_hierarchy: "Fix the heading hierarchy to use proper H2/H3 nesting without changing the meaning",
         };

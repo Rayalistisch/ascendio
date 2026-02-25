@@ -54,16 +54,20 @@ async function checkLinkStatus(url: string): Promise<number | null> {
       method: "HEAD",
       redirect: "follow",
       headers: { "User-Agent": "AscendioBot/1.0 (SEO scanner)" },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(3000),
     });
     if (res.status === 405) {
-      const get = await fetch(url, {
-        method: "GET",
-        redirect: "follow",
-        headers: { "User-Agent": "AscendioBot/1.0 (SEO scanner)" },
-        signal: AbortSignal.timeout(5000),
-      });
-      return get.status;
+      try {
+        const get = await fetch(url, {
+          method: "GET",
+          redirect: "follow",
+          headers: { "User-Agent": "AscendioBot/1.0 (SEO scanner)" },
+          signal: AbortSignal.timeout(3000),
+        });
+        return get.status;
+      } catch {
+        return null;
+      }
     }
     return res.status;
   } catch {
@@ -522,9 +526,11 @@ export async function scanSite(
     allIssues.push(...issues);
   }
 
-  // Phase 3: Dead link check
-  const MAX_LINKS = 150;
+  // Phase 3: Dead link check (max 100 links, 30s total budget)
+  const MAX_LINKS = 100;
   const LINK_CONCURRENCY = 10;
+  const LINK_BUDGET_MS = 30_000;
+  const linkPhaseStart = Date.now();
 
   // Collect links from WP post content per page (not rendered HTML — avoids nav/footer noise)
   const urlToPages = new Map<string, string[]>();
@@ -547,6 +553,7 @@ export async function scanSite(
 
   const statusMap = new Map<string, number | null>();
   for (let i = 0; i < uniqueLinks.length; i += LINK_CONCURRENCY) {
+    if (Date.now() - linkPhaseStart > LINK_BUDGET_MS) break; // stop if over 30s budget
     const batch = uniqueLinks.slice(i, i + LINK_CONCURRENCY);
     await Promise.all(
       batch.map(async (url) => {

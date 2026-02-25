@@ -445,6 +445,25 @@ export async function scanSite(
     })
   );
 
+  // Pre-fetch SEO meta for all pages in parallel (max 8 concurrent) to avoid sequential delays
+  const CONCURRENCY = 8;
+  const seoMetaMap = new Map<string, { title: string | null; description: string | null }>();
+  for (let i = 0; i < posts.length; i += CONCURRENCY) {
+    const batch = posts.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      batch.map(async (post) => {
+        const url = post.link || "";
+        if (!url) return;
+        try {
+          const html = await fetchPageHtml(url);
+          seoMetaMap.set(url, parseSeoFromHtml(html));
+        } catch {
+          // page unreachable — analyzePage will fall back to excerpt
+        }
+      })
+    );
+  }
+
   const allIssues: ScanIssue[] = [];
   for (let index = 0; index < posts.length; index++) {
     const post = posts[index];
@@ -453,7 +472,8 @@ export async function scanSite(
       post,
       summaries,
       plagiarismMatchesByPostId.get(summary.id) || [],
-      externalPlagiarismByPostId.get(summary.id) || []
+      externalPlagiarismByPostId.get(summary.id) || [],
+      seoMetaMap.get(post.link || "") ?? null
     );
     allIssues.push(...issues);
   }
@@ -465,7 +485,8 @@ export async function analyzePage(
   post: Record<string, any>,
   allPosts: PageSummary[],
   plagiarismMatches: PlagiarismMatch[] = [],
-  externalPlagiarismMatches: ExternalPlagiarismMatch[] = []
+  externalPlagiarismMatches: ExternalPlagiarismMatch[] = [],
+  prefetchedSeoMeta: { title: string | null; description: string | null } | null = null
 ): Promise<ScanIssue[]> {
   const issues: ScanIssue[] = [];
   const html = typeof post.content === "object" ? post.content.rendered : post.content || "";
@@ -522,21 +543,10 @@ export async function analyzePage(
     });
   }
 
-  // 4. Missing meta description + missing meta title (via actual page HTML)
+  // 4. Missing meta description + missing meta title (via pre-fetched page HTML)
   {
-    let seoTitle: string | null = null;
-    let seoDescription: string | null = null;
-
-    try {
-      if (postUrl) {
-        const html = await fetchPageHtml(postUrl);
-        const parsed = parseSeoFromHtml(html);
-        seoTitle = parsed.title;
-        seoDescription = parsed.description;
-      }
-    } catch {
-      // HTML fetch failed — fall back to excerpt for description
-    }
+    let seoTitle: string | null = prefetchedSeoMeta?.title ?? null;
+    let seoDescription: string | null = prefetchedSeoMeta?.description ?? null;
 
     // Fall back to WP excerpt if HTML parse gave nothing
     if (!seoDescription) {

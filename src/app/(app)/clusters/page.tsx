@@ -45,6 +45,7 @@ interface Cluster {
   pillar_topic: string;
   pillar_description: string | null;
   pillar_keywords: string[];
+  pillar_wp_post_id: number | null;
   pillar_wp_post_url: string | null;
   status: string;
   content_type: string;
@@ -53,6 +54,12 @@ interface Cluster {
   topic_count: number;
   published_count: number;
   created_at: string;
+}
+
+interface WpPostOption {
+  wp_post_id: number;
+  title: string;
+  url: string;
 }
 
 interface ClusterTopic {
@@ -216,6 +223,11 @@ export default function ClustersPage() {
   // Content type for new cluster
   const [newContentType, setNewContentType] = useState("pages");
 
+  // Pillar page selector
+  const [wpPostOptions, setWpPostOptions] = useState<WpPostOption[]>([]);
+  const [selectedPillarId, setSelectedPillarId] = useState<string>("");
+  const [settingPillar, setSettingPillar] = useState(false);
+
   // Sitemap
   const [sitemapOverlaps, setSitemapOverlaps] = useState<Array<{ url: string; reason: string }>>([]);
   const [sitemapLoading, setSitemapLoading] = useState(false);
@@ -232,9 +244,9 @@ export default function ClustersPage() {
       });
   }, []);
 
-  const fetchClusters = useCallback(async () => {
+  const fetchClusters = useCallback(async (silent = false) => {
     if (!siteId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const res = await fetch(`/api/clusters?siteId=${siteId}`);
       const data = await res.json();
@@ -246,7 +258,7 @@ export default function ClustersPage() {
       );
       setClusters(normalizedClusters);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [siteId]);
 
@@ -272,7 +284,7 @@ export default function ClustersPage() {
     if (!hasGenerating || !expandedId) return;
     const interval = setInterval(() => {
       void fetchTopics(expandedId, true);
-      void fetchClusters();
+      void fetchClusters(true);
     }, 5000);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -309,19 +321,86 @@ export default function ClustersPage() {
     }
     await fetchTopics(clusterId);
 
-    // Fetch sitemap overlaps for this cluster
+    // Fetch sitemap overlaps and WP posts for this cluster
     const cluster = clusters.find((c) => c.id === clusterId);
     if (cluster) {
       setSitemapLoading(true);
+      setSelectedPillarId("");
       try {
-        const res = await fetch(`/api/sitemap?siteId=${cluster.site_id}&clusterId=${clusterId}`);
-        if (res.ok) {
-          const data = await res.json();
+        const [sitemapRes, wpRes] = await Promise.all([
+          fetch(`/api/sitemap?siteId=${cluster.site_id}&clusterId=${clusterId}`),
+          cluster.content_type === "pages"
+            ? fetch(`/api/clusters/wp-pages?siteId=${cluster.site_id}`)
+            : Promise.resolve(null),
+        ]);
+        if (sitemapRes.ok) {
+          const data = await sitemapRes.json();
           setSitemapOverlaps(data.overlapping ?? []);
+        }
+        if (wpRes?.ok) {
+          const data = await wpRes.json();
+          setWpPostOptions(
+            (data.pages ?? []).map((p: { wp_post_id: number; title: string; url: string }) => ({
+              wp_post_id: p.wp_post_id,
+              title: p.title || p.url,
+              url: p.url,
+            }))
+          );
         }
       } finally {
         setSitemapLoading(false);
       }
+    }
+  }
+
+  async function setPillarPage(clusterId: string, siteId: string) {
+    const post = wpPostOptions.find((p) => String(p.wp_post_id) === selectedPillarId);
+    if (!post) return;
+    setSettingPillar(true);
+    try {
+      const res = await fetch("/api/clusters", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: clusterId,
+          pillarWpPostId: post.wp_post_id,
+          pillarWpPostUrl: post.url,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        window.alert(data.error || "Pillar koppelen mislukt");
+        return;
+      }
+      setClusters((prev) =>
+        prev.map((c) =>
+          c.id === clusterId
+            ? { ...c, pillar_wp_post_id: post.wp_post_id, pillar_wp_post_url: post.url }
+            : c
+        )
+      );
+      setSelectedPillarId("");
+    } finally {
+      setSettingPillar(false);
+    }
+    void siteId; // used implicitly via wpPostOptions
+  }
+
+  async function unlinkPillarPage(clusterId: string) {
+    setSettingPillar(true);
+    try {
+      await fetch("/api/clusters", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: clusterId, pillarWpPostId: null, pillarWpPostUrl: null }),
+      });
+      setClusters((prev) =>
+        prev.map((c) =>
+          c.id === clusterId ? { ...c, pillar_wp_post_id: null, pillar_wp_post_url: null } : c
+        )
+      );
+    } finally {
+      setSettingPillar(false);
     }
   }
 
@@ -1253,6 +1332,67 @@ export default function ClustersPage() {
                           <p className="text-xs text-muted-foreground">Template opslaan...</p>
                         ) : null}
                       </div>
+
+                      {/* Pillar page linker (pages mode only) */}
+                      {cluster.content_type === "pages" && (
+                        <div className="space-y-2 rounded-lg border bg-muted/20 p-4">
+                          <Label className="text-xs font-semibold">Pillar pagina</Label>
+                          {cluster.pillar_wp_post_id ? (
+                            <div className="flex items-center gap-2">
+                              <a
+                                href={cluster.pillar_wp_post_url ?? "#"}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex-1 truncate text-sm text-primary underline underline-offset-2"
+                              >
+                                {wpPostOptions.find((p) => p.wp_post_id === cluster.pillar_wp_post_id)?.title ?? cluster.pillar_wp_post_url ?? `Pagina #${cluster.pillar_wp_post_id}`}
+                              </a>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="shrink-0 text-destructive"
+                                onClick={() => unlinkPillarPage(cluster.id)}
+                                disabled={settingPillar}
+                              >
+                                <X className="h-3.5 w-3.5 mr-1" /> Ontkoppelen
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <NativeSelect
+                                value={selectedPillarId}
+                                onChange={(e) => setSelectedPillarId(e.target.value)}
+                                className="flex-1"
+                                disabled={wpPostOptions.length === 0}
+                              >
+                                <option value="">
+                                  {wpPostOptions.length === 0
+                                    ? "Geen pagina's gevonden in cache — synchroniseer eerst"
+                                    : "Selecteer een bestaande pagina…"}
+                                </option>
+                                {wpPostOptions.map((p) => (
+                                  <option key={p.wp_post_id} value={String(p.wp_post_id)}>
+                                    {p.title}
+                                  </option>
+                                ))}
+                              </NativeSelect>
+                              <Button
+                                size="sm"
+                                className="shrink-0"
+                                onClick={() => setPillarPage(cluster.id, cluster.site_id)}
+                                disabled={!selectedPillarId || settingPillar}
+                              >
+                                {settingPillar ? "Koppelen..." : "Koppel"}
+                              </Button>
+                            </div>
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            {cluster.pillar_wp_post_id
+                              ? "Subtopics worden als kindpagina van deze pillar aangemaakt."
+                              : "Bestaat de pillar al? Koppel hem hier zodat subtopics er automatisch onder vallen. Of laat het leeg om een nieuwe pillar te laten genereren."}
+                          </p>
+                        </div>
+                      )}
 
                       {/* Sitemap overlap warning */}
                       {sitemapLoading && (

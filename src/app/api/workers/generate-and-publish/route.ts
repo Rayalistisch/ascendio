@@ -1035,10 +1035,13 @@ export async function POST(request: Request) {
           .eq("id", clusterId)
           .single();
 
+        console.log(`[worker] pages child: pillar_wp_post_id = ${parentCluster?.pillar_wp_post_id ?? "NULL"}`);
+
         if (parentCluster?.pillar_wp_post_id) {
           parentPageId = parentCluster.pillar_wp_post_id;
         } else {
           // Parent pillar not yet published — throw so QStash retries
+          console.log("[worker] Pillar not published yet — throwing for retry");
           throw new Error("Parent pillar pagina is nog niet gepubliceerd. Wordt opnieuw geprobeerd.");
         }
       }
@@ -1250,6 +1253,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, postUrl: post.url });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Onbekende fout";
+    console.error(`[worker] FOUT runId=${runId} topicId=${clusterTopicId ?? "pillar"}: ${errorMessage}`);
 
     await logStep(supabase, runId, "error", `Run mislukt: ${errorMessage}`);
 

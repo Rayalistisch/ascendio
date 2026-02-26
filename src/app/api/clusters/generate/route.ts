@@ -178,6 +178,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No jobs could be queued" }, { status: 500 });
   }
 
+  console.log(`[generate] ${results.length} jobs queued voor cluster ${clusterId}, contentType=${contentType}`);
+
   // Update cluster status
   await supabase
     .from("asc_clusters")

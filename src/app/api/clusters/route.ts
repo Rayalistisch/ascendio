@@ -119,6 +119,12 @@ export async function PATCH(request: Request) {
   if (fields.generationSettings !== undefined) {
     updates.generation_settings = normalizeGenerationSettings(fields.generationSettings);
   }
+  if (fields.pillarWpPostId !== undefined) {
+    updates.pillar_wp_post_id = fields.pillarWpPostId ?? null;
+  }
+  if (fields.pillarWpPostUrl !== undefined) {
+    updates.pillar_wp_post_url = fields.pillarWpPostUrl ?? null;
+  }
   if (fields.contentType !== undefined) {
     // Block content type change if cluster already has published content
     const { data: existing } = await supabase

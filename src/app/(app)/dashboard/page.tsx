@@ -1,13 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
-import {
-  FileText,
-  BarChart3,
-  ShieldCheck,
-  Globe,
-  Calendar,
-  Send,
-} from "lucide-react";
 import { SearchConsoleCharts } from "@/components/search-console-charts";
 
 interface DashboardPageProps {
@@ -70,9 +62,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   // Fetch all stats in parallel
   const [
     publishedResult,
-    schedulesResult,
     seoIssuesResult,
-    socialPostsResult,
     indexedResult,
     avgSeoScoreResult,
   ] = await Promise.all([
@@ -85,24 +75,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     ),
     withSiteFilter(
       supabase
-        .from("asc_schedules")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("is_enabled", true)
-    ),
-    withSiteFilter(
-      supabase
         .from("asc_scan_issues")
         .select("id", { count: "exact", head: true })
         .eq("user_id", user.id)
         .eq("is_fixed", true)
-    ),
-    withSiteFilter(
-      supabase
-        .from("asc_social_posts")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("status", "sent")
     ),
     withSiteFilter(
       supabase
@@ -121,9 +97,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   ]);
 
   const publishedCount = publishedResult.count ?? 0;
-  const schedulesCount = schedulesResult.count ?? 0;
   const issuesFixedCount = seoIssuesResult.count ?? 0;
-  const socialSentCount = socialPostsResult.count ?? 0;
   const indexedCount = indexedResult.count ?? 0;
 
   // Calculate average SEO score
@@ -135,57 +109,60 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       ? Math.round(seoScores.reduce((a, b) => a + b, 0) / seoScores.length)
       : null;
 
-  function scoreColor(score: number | null): string {
+  function scoreNumberClass(score: number | null): string {
     if (score === null) return "text-muted-foreground";
     if (score >= 80) return "text-emerald-600";
     if (score >= 50) return "text-amber-500";
     return "text-red-500";
   }
 
+  function scoreBarClass(score: number | null): string {
+    if (score === null) return "bg-muted-foreground";
+    if (score >= 80) return "bg-emerald-400";
+    if (score >= 50) return "bg-amber-400";
+    return "bg-red-400";
+  }
+
   const stats = [
     {
       label: "Gepubliceerd",
+      subLabel: "Artikelen live gezet",
       value: publishedCount,
-      icon: FileText,
+      suffix: "",
       href: withSiteHref("/runs"),
-      accent: "bg-blue-500/10 text-blue-600",
+      numberClass: "text-blue-600",
+      barClass: "bg-blue-400",
+      bars: [4, 6, 5, 8, 6, 9, 7],
     },
     {
       label: "Gem. SEO-score",
+      subLabel: "Over al je pagina's",
       value: avgSeoScore !== null ? `${avgSeoScore}` : "—",
       suffix: avgSeoScore !== null ? "/100" : "",
-      icon: BarChart3,
       href: withSiteHref("/seo-editor"),
-      accent: "bg-emerald-500/10 text-emerald-600",
-      valueClass: scoreColor(avgSeoScore),
+      numberClass: scoreNumberClass(avgSeoScore),
+      barClass: scoreBarClass(avgSeoScore),
+      bars: [7, 6, 8, 7, 9, 8, 9],
     },
     {
       label: "Issues gefixt",
+      subLabel: "SEO-problemen opgelost",
       value: issuesFixedCount,
-      icon: ShieldCheck,
+      suffix: "",
       href: withSiteHref("/scanner"),
-      accent: "bg-violet-500/10 text-violet-600",
+      numberClass: "text-violet-600",
+      barClass: "bg-violet-400",
+      bars: [3, 5, 4, 7, 5, 8, 6],
     },
     {
       label: "Geïndexeerd",
+      subLabel: "Pagina's bij Google",
       value: indexedCount,
-      icon: Globe,
+      suffix: "",
       href: withSiteHref("/indexing"),
-      accent: "bg-amber-500/10 text-amber-600",
-    },
-    {
-      label: "Planningen",
-      value: schedulesCount,
-      icon: Calendar,
-      href: withSiteHref("/schedule"),
-      accent: "bg-pink-500/10 text-pink-600",
-    },
-    {
-      label: "Social posts",
-      value: socialSentCount,
-      icon: Send,
-      href: withSiteHref("/social"),
-      accent: "bg-cyan-500/10 text-cyan-600",
+      numberClass: "text-amber-600",
+      barClass: "bg-amber-400",
+      bars: [5, 6, 7, 8, 7, 9, 8],
     },
   ];
 
@@ -193,48 +170,64 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground mt-1">
+        <h1 className="text-3xl font-bold tracking-tight">
+          {activeSiteName ? `${activeSiteName}` : "Dashboard"}
+        </h1>
+        <p className="text-muted-foreground mt-1.5 text-sm">
           {activeSiteName
-            ? `Overzicht voor "${activeSiteName}"`
+            ? "Overzicht van je SEO-prestaties"
             : "Overzicht van je AI-powered SEO platform."}
         </p>
       </div>
 
       {/* Stats cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {stats.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <Link
-              key={stat.label}
-              href={stat.href}
-              className="group relative rounded-xl border bg-card p-4 shadow-sm transition-all hover:shadow-md hover:border-primary/20"
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-muted-foreground">
-                  {stat.label}
-                </p>
-                <div className={`rounded-lg p-1.5 ${stat.accent}`}>
-                  <Icon className="h-3.5 w-3.5" />
-                </div>
-              </div>
-              <p className={`mt-2 text-2xl font-bold tracking-tight ${stat.valueClass ?? ""}`}>
-                {stat.value}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {stats.map((stat) => (
+          <Link
+            key={stat.label}
+            href={stat.href}
+            className="group relative flex flex-col justify-between rounded-2xl border border-white/70 bg-white/60 p-5 shadow-md shadow-black/5 backdrop-blur-sm transition-all hover:bg-white/80 hover:shadow-lg"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-foreground">{stat.label}</span>
+              <span className="rounded-full bg-muted/80 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+                Bekijk
+              </span>
+            </div>
+
+            {/* Sub-label */}
+            <p className="mt-2 text-xs text-muted-foreground">{stat.subLabel}</p>
+
+            {/* Number + sparkline */}
+            <div className="mt-5 flex items-end justify-between">
+              <div className="leading-none">
+                <span className={`text-4xl font-bold tracking-tight ${stat.numberClass}`}>
+                  {stat.value}
+                </span>
                 {stat.suffix && (
-                  <span className="text-sm font-normal text-muted-foreground">{stat.suffix}</span>
+                  <span className="ml-1 text-sm font-normal text-muted-foreground">{stat.suffix}</span>
                 )}
-              </p>
-            </Link>
-          );
-        })}
+              </div>
+              <div className="flex items-end gap-0.5 pb-0.5">
+                {stat.bars.map((h, i) => (
+                  <div
+                    key={i}
+                    className={`w-1.5 rounded-sm opacity-35 ${stat.barClass}`}
+                    style={{ height: `${h * 3}px` }}
+                  />
+                ))}
+              </div>
+            </div>
+          </Link>
+        ))}
       </div>
 
       {/* Search Console Charts */}
       {activeSiteId && <SearchConsoleCharts siteId={activeSiteId} />}
 
       {!activeSiteId && (
-        <div className="rounded-xl border border-dashed p-12 text-center">
+        <div className="rounded-2xl border border-dashed p-12 text-center">
           <p className="text-muted-foreground">
             Selecteer een site in de zijbalk om Search Console statistieken te bekijken.
           </p>

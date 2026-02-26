@@ -266,14 +266,26 @@ export default function ClustersPage() {
     setNewTemplateId("");
   }, [siteId]);
 
-  async function fetchTopics(clusterId: string) {
-    setTopicsLoading(true);
+  // Poll while topics are generating
+  useEffect(() => {
+    const hasGenerating = topics.some((t) => t.status === "generating");
+    if (!hasGenerating || !expandedId) return;
+    const interval = setInterval(() => {
+      void fetchTopics(expandedId, true);
+      void fetchClusters();
+    }, 5000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topics, expandedId]);
+
+  async function fetchTopics(clusterId: string, silent = false) {
+    if (!silent) setTopicsLoading(true);
     try {
       const res = await fetch(`/api/clusters/topics?clusterId=${clusterId}`);
       const data = await res.json();
       setTopics(data.topics ?? []);
     } finally {
-      setTopicsLoading(false);
+      if (!silent) setTopicsLoading(false);
     }
   }
 
@@ -476,7 +488,7 @@ export default function ClustersPage() {
     setGenerating(true);
     try {
       const cluster = clusters.find((item) => item.id === clusterId);
-      await fetch("/api/clusters/generate", {
+      const res = await fetch("/api/clusters/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -486,6 +498,11 @@ export default function ClustersPage() {
             : undefined,
         }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        window.alert(data.error || "Genereren mislukt");
+        return;
+      }
       if (expandedId !== clusterId) setExpandedId(clusterId);
       await fetchTopics(clusterId);
       fetchClusters();

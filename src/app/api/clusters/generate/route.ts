@@ -31,11 +31,51 @@ export async function POST(request: Request) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allTopics = (cluster as any).asc_cluster_topics ?? [];
+
+  // Rescue topics stuck in "generating" whose run has been running for > 15 minutes
+  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const stuckTopicIds: string[] = [];
+  for (const t of allTopics.filter((t: { status: string }) => t.status === "generating")) {
+    const { data: stuckRun } = await supabase
+      .from("asc_runs")
+      .select("id")
+      .eq("cluster_topic_id", t.id)
+      .in("status", ["running", "queued"])
+      .lt("started_at", fifteenMinutesAgo)
+      .maybeSingle();
+    if (stuckRun) stuckTopicIds.push(t.id);
+  }
+  if (stuckTopicIds.length > 0) {
+    await supabase
+      .from("asc_cluster_topics")
+      .update({ status: "failed" })
+      .in("id", stuckTopicIds);
+    await supabase
+      .from("asc_runs")
+      .update({ status: "failed", error_message: "Worker timeout — opnieuw in wachtrij", finished_at: new Date().toISOString() })
+      .in("cluster_topic_id", stuckTopicIds)
+      .in("status", ["running", "queued"]);
+  }
+
+  // Reload topics with updated statuses
+  const { data: freshCluster } = await supabase
+    .from("asc_clusters")
+    .select("*, asc_cluster_topics(*)")
+    .eq("id", clusterId)
+    .eq("user_id", user.id)
+    .single();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const freshTopics = (freshCluster as any)?.asc_cluster_topics ?? allTopics;
+
   const targetTopics = topicIds
-    ? allTopics.filter((t: { id: string }) => topicIds.includes(t.id))
-    : allTopics.filter((t: { status: string }) => t.status === "pending" || t.status === "failed");
+    ? freshTopics.filter((t: { id: string }) => topicIds.includes(t.id))
+    : freshTopics.filter((t: { status: string }) => t.status === "pending" || t.status === "failed");
 
   if (targetTopics.length === 0) {
+    const generatingCount = freshTopics.filter((t: { status: string }) => t.status === "generating").length;
+    if (generatingCount > 0) {
+      return NextResponse.json({ error: `${generatingCount} pagina's zijn al bezig met genereren` }, { status: 409 });
+    }
     return NextResponse.json({ error: "No pending or failed topics to generate" }, { status: 400 });
   }
 

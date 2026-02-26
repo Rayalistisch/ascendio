@@ -186,11 +186,26 @@ function buildToneOfVoiceInstruction(tov: ToneOfVoice | null | undefined): strin
     parts.push(`- Vermijd deze woorden/zinnen: ${tov.avoidWords.join(", ")}`);
   }
   if (tov.exampleSentences?.length) {
-    const examples = tov.exampleSentences
-      .slice(0, 5)
-      .map((s, i) => `  ${i + 1}. "${s}"`)
-      .join("\n");
-    parts.push(`- Schrijf in de stijl van deze voorbeeldzinnen:\n${examples}`);
+    // Filter out sentences that start with forbidden AI-cliché patterns
+    const forbiddenPrefixes = [
+      /^in (een|de|het) (wereld|huidige|dynamische|moderne|hedendaagse|digitale)/i,
+      /^steeds meer/i,
+      /^we leven in/i,
+      /^nu meer dan ooit/i,
+      /^in dit (artikel|blog|tijdperk|gids)/i,
+      /^laten we/i,
+      /^stel je voor/i,
+      /^wist je dat/i,
+    ];
+    const cleanExamples = tov.exampleSentences
+      .filter((s) => !forbiddenPrefixes.some((rx) => rx.test(s.trim())))
+      .slice(0, 5);
+    if (cleanExamples.length) {
+      const examples = cleanExamples.map((s, i) => `  ${i + 1}. "${s}"`).join("\n");
+      parts.push(
+        `- Gebruik deze voorbeeldzinnen als referentie voor vocabulaire, toon en ritme — NIET voor de zinsbouw of openingsstructuur:\n${examples}`
+      );
+    }
   }
   if (tov.brandGuidelines) {
     parts.push(`- Merkrichtlijnen: ${tov.brandGuidelines}`);

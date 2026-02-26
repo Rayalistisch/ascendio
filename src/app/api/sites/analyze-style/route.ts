@@ -113,10 +113,26 @@ Richtlijnen:
       avoidWords?: string[];
     };
 
+    // Strip out any example sentences that start with forbidden AI-cliché patterns
+    const forbiddenPrefixes = [
+      /^in (een|de|het) (wereld|huidige|dynamische|moderne|hedendaagse|digitale)/i,
+      /^steeds meer/i,
+      /^we leven in/i,
+      /^nu meer dan ooit/i,
+      /^in dit (artikel|blog|tijdperk|gids)/i,
+      /^laten we/i,
+      /^stel je voor/i,
+      /^wist je dat/i,
+    ];
+    const rawSentences = Array.isArray(result.exampleSentences) ? result.exampleSentences : [];
+    const cleanSentences = rawSentences.filter(
+      (s) => typeof s === "string" && !forbiddenPrefixes.some((rx) => rx.test(s.trim()))
+    );
+
     return NextResponse.json({
       tone: result.tone ?? "",
       targetAudience: result.targetAudience ?? "",
-      exampleSentences: Array.isArray(result.exampleSentences) ? result.exampleSentences : [],
+      exampleSentences: cleanSentences,
       brandGuidelines: result.brandGuidelines ?? "",
       avoidWords: Array.isArray(result.avoidWords) ? result.avoidWords : [],
       postsAnalyzed: usablePosts.length,

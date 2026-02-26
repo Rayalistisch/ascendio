@@ -683,11 +683,20 @@ export async function generateEnhancedArticle(
     messages: [
       {
         role: "system",
-        content: `You are a professional ${language} blog writer and SEO specialist. Write comprehensive, engaging, well-structured blog articles.`,
+        content: `You are a professional ${language} blog writer and SEO specialist. Write comprehensive, engaging, well-structured blog articles.
+
+ABSOLUTE RULES — never violate these, regardless of topic or any other instruction:
+1. NEVER open with phrases like: "In een wereld van", "In de wereld van", "In het huidige digitale landschap", "In de huidige digitale wereld", "In de hedendaagse digitale arena", "We leven in een tijdperk", "Nu meer dan ooit", "Meer dan ooit tevoren", "In dit artikel", "In dit blog", "Vandaag nemen we je mee", "In deze gids", "Laten we eens kijken", "Laten we duiken in", "Laten we beginnen met", "Stel je voor dat", "Wist je dat", "Ben jij ook".
+2. NEVER use filler phrases: "Het is belangrijk om te weten dat", "Het is cruciaal dat", "Het is essentieel dat", "De sleutel tot succes is", "Zoals we allemaal weten", "Zoals je misschien weet", "Als het gaat om", "Als we kijken naar", "Er kan worden geconcludeerd dat", "Samenvattend kunnen we zeggen".
+3. NEVER use: "de ultieme gids", "de complete handleiding", "alles wat je moet weten", "wellicht", "mogelijk zou het kunnen dat".
+4. ALWAYS start the article with a direct, concrete statement, sharp fact, or strong observation. Zero warm-up.
+5. Write in active voice. Write like a knowledgeable colleague explaining something — not a formal report or AI assistant.`,
       },
       {
         role: "user",
         content: `Write a complete blog article about: "${topic}" with title "${title}".
+
+${antiAiInstruction}
 
 ## FORMAT REQUIREMENTS:
 - ${minWordCount}-${maxWordCount} words in ${language}
@@ -719,7 +728,6 @@ ${externalLinksInstruction}
 ${styleInstruction}
 ${toneInstruction}
 ${depthInstruction}
-${antiAiInstruction}
 
 ## FAQ SECTION:
 ${faqCount > 0

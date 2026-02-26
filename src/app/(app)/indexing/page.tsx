@@ -21,6 +21,7 @@ interface IndexingRequest {
   status: string;
   submitted_at: string | null;
   created_at: string;
+  error_message: string | null;
 }
 
 const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -297,7 +298,12 @@ export default function IndexingPage() {
                       </a>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={status.variant}>{status.label}</Badge>
+                      <div className="flex flex-col gap-1">
+                        <Badge variant={status.variant}>{status.label}</Badge>
+                        {req.status === "failed" && req.error_message && (
+                          <span className="text-xs text-destructive max-w-[240px] break-words">{req.error_message}</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                       {formatDate(req.submitted_at)}

@@ -67,6 +67,8 @@ export default function SiteDetailPage() {
   const [brandGuidelines, setBrandGuidelines] = useState("");
   const [savingTone, setSavingTone] = useState(false);
   const [toneSaved, setToneSaved] = useState(false);
+  const [analyzingStyle, setAnalyzingStyle] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadSite() {
@@ -148,6 +150,32 @@ export default function SiteDetailPage() {
       body: JSON.stringify({ id: templateId, isDefault: true }),
     });
     fetchTemplates();
+  }
+
+  async function analyzeStyle() {
+    setAnalyzingStyle(true);
+    setAnalyzeError(null);
+    try {
+      const res = await fetch("/api/sites/analyze-style", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAnalyzeError(data.error || "Analyse mislukt");
+        return;
+      }
+      if (data.tone) setTone(data.tone);
+      if (data.targetAudience) setTargetAudience(data.targetAudience);
+      if (data.avoidWords?.length) setAvoidWords(data.avoidWords.join(", "));
+      if (data.exampleSentences?.length) setExampleSentences(data.exampleSentences.join("\n"));
+      if (data.brandGuidelines) setBrandGuidelines(data.brandGuidelines);
+    } catch {
+      setAnalyzeError("Er ging iets mis bij de analyse");
+    } finally {
+      setAnalyzingStyle(false);
+    }
   }
 
   async function saveToneOfVoice() {
@@ -307,12 +335,29 @@ export default function SiteDetailPage() {
 
       {/* Tone of Voice / Knowledge Base */}
       <div className="rounded-xl border bg-card p-4 space-y-3">
-        <div>
-          <h2 className="font-semibold">Schrijfstijl & Tone of Voice</h2>
-          <p className="text-sm text-muted-foreground">
-            Configureer de schrijfstijl die de AI gebruikt bij het genereren en herschrijven van content voor deze site.
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="font-semibold">Schrijfstijl & Tone of Voice</h2>
+            <p className="text-sm text-muted-foreground">
+              Configureer de schrijfstijl die de AI gebruikt bij het genereren en herschrijven van content voor deze site.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={analyzeStyle}
+            disabled={analyzingStyle}
+            className="shrink-0"
+          >
+            {analyzingStyle ? "Analyseren…" : "Analyseer bestaande content"}
+          </Button>
         </div>
+
+        {analyzeError && (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {analyzeError}
+          </div>
+        )}
 
         <div className="space-y-4">
           <div className="space-y-1">

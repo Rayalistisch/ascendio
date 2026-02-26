@@ -201,6 +201,42 @@ function buildToneOfVoiceInstruction(tov: ToneOfVoice | null | undefined): strin
   return `\n## SCHRIJFSTIJL / TONE OF VOICE (VERPLICHT):\nPas de volgende schrijfstijl-instructies toe op ALLE gegenereerde content:\n${parts.join("\n")}`;
 }
 
+function buildAntiAiInstruction(language: string): string {
+  return `
+## SCHRIJFSTIJL — ABSOLUUT VERBODEN:
+De volgende zinnen en patronen zijn VERBODEN. Ze mogen NOOIT voorkomen, ook niet als lichte variant of parafrase:
+
+Verboden openingsclichés:
+- "In een wereld van...", "In de wereld van...", "In het huidige digitale landschap..."
+- "We leven in een tijdperk...", "Nu meer dan ooit...", "Meer dan ooit tevoren..."
+- "In dit artikel...", "In dit blog...", "Vandaag nemen we je mee...", "In deze gids..."
+- "Laten we eens kijken...", "Laten we duiken in...", "Laten we beginnen met..."
+- "Stel je voor dat...", "Wist je dat...", "Ben jij ook..."
+
+Verboden vulzinnen:
+- "Het is belangrijk om te weten dat...", "Het is cruciaal dat...", "Het is essentieel dat..."
+- "De sleutel tot succes is...", "De sleutel tot...", "De basis is..."
+- "Er kan worden geconcludeerd dat...", "Samenvattend kunnen we zeggen..."
+- "Als het gaat om...", "Als we kijken naar...", "Op het gebied van..."
+- "Zoals we allemaal weten...", "Zoals je misschien weet..."
+- Conclusies die alleen herhalen wat er al stond
+
+Verboden taalslodheden:
+- "de ultieme gids", "de complete handleiding", "alles wat je moet weten"
+- "wellicht", "mogelijk zou het kunnen dat", "in theorie zou..."
+- Overmatig passief: "er dient rekening gehouden te worden", "er kan worden gesteld"
+
+## SCHRIJFSTIJL — VERPLICHT (${language}):
+- Begin DIRECT: open met een concrete stelling, een scherp feit of een scherpe observatie. Geen aanloop.
+- Spreektaal: schrijf zoals je het uitlegt aan een slimme collega, niet zoals in een rapport.
+- Varieer zinslengte bewust: korte zinnen voor impact. Iets langere voor nuance. Nooit meer dan 22 woorden aaneengesloten.
+- Actieve zinsbouw: het subject doet iets. Niet: "er wordt gedaan".
+- Concrete getallen, namen en voorbeelden in plaats van vage algemeenheden.
+- Geen opvulzinnen: als een zin niets toevoegt aan begrip of overtuiging, schrap hem.
+- Punchy paragrafen: max 3-4 zinnen per alinea.
+- Geen overdreven zekerheid of superlatieven waar die niet kloppen.`;
+}
+
 export interface HumanizeArticleRequest {
   language?: string;
   topic: string;
@@ -638,6 +674,7 @@ export async function generateEnhancedArticle(
 
   // Build explicit tone of voice instruction from site settings
   const toneInstruction = buildToneOfVoiceInstruction(req.toneOfVoice);
+  const antiAiInstruction = buildAntiAiInstruction(language);
 
   // Stage 2: Full enhanced article
   const articleResponse = await client.chat.completions.create({
@@ -682,6 +719,7 @@ ${externalLinksInstruction}
 ${styleInstruction}
 ${toneInstruction}
 ${depthInstruction}
+${antiAiInstruction}
 
 ## FAQ SECTION:
 ${faqCount > 0
@@ -872,7 +910,7 @@ export async function humanizeArticleDraft(
     messages: [
       {
         role: "system",
-        content: `You are a senior ${language} editor. Rewrite content so it sounds natural, specific, and human-written while preserving factual correctness and SEO intent. Do not use generic filler language.`,
+        content: `You are a senior ${language} editor who specializes in making AI-written content sound genuinely human. Your job: rewrite content to be punchy, direct, and conversational — like a knowledgeable colleague explaining something, not a formal report. Eliminate all AI clichés, filler sentences, and passive constructions. Preserve factual accuracy and SEO intent. Never start with "In een wereld van", "In dit artikel", "Laten we", or any similar AI opener.`,
       },
       {
         role: "user",
@@ -880,9 +918,10 @@ export async function humanizeArticleDraft(
 
 ## DOEL:
 - Unieke formulering met duidelijk eigen invalshoek
-- Minder "AI-achtig" (geen clichés, geen repetitieve patronen)
+- Klinkt als spreektaal, niet als een AI-rapport
 - Inhoudelijk gelijkwaardig of beter
 ${keywordNote}
+${buildAntiAiInstruction(req.language ?? "Dutch")}
 
 ## STRUCTUUR DIE MOET BLIJVEN:
 - Geldige HTML (<h2>/<h3>/<p>/<ul>/<ol>/<table>/<blockquote>)
@@ -1091,10 +1130,7 @@ export async function rewriteContentWithPrompt(
     settings.structure.faqCount > 0
       ? `Include a FAQ section at the end with <h2> and ${settings.structure.faqCount} <h3> question/answer pairs.`
       : "Do not include a FAQ section unless the user's instruction explicitly asks for it.";
-  const antiAiInstruction = `Schrijf concreet en menselijk:
-- Verboden openingszinnen/clichés: "In de wereld van...", "In dit artikel...", "Laten we eens...", "In het huidige digitale landschap...", "De sleutel tot...".
-- Vermijd lege marketingtaal en overbodige opvulzinnen.
-- Gebruik directe taal, specifieke voorbeelden en korte, natuurlijke zinnen.`;
+  const antiAiInstruction = buildAntiAiInstruction("Dutch");
   const response = await client.chat.completions.create({
     model: "gpt-4o",
     temperature: 0.7,

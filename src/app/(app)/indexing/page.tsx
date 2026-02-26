@@ -5,8 +5,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CheckCircle2, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
 
 interface Site {
   id: string;
@@ -42,6 +44,13 @@ export default function IndexingPage() {
   const [loading, setLoading] = useState(true);
   const [newUrl, setNewUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Credentials state
+  const [hasCredentials, setHasCredentials] = useState<boolean | null>(null);
+  const [showCredentialForm, setShowCredentialForm] = useState(false);
+  const [credentialJson, setCredentialJson] = useState("");
+  const [savingCredentials, setSavingCredentials] = useState(false);
+  const [credentialError, setCredentialError] = useState("");
 
   function updateSiteInUrl(nextSiteId: string) {
     const params = new URLSearchParams(searchParams.toString());
@@ -79,9 +88,57 @@ export default function IndexingPage() {
     }
   }, [siteId]);
 
+  const fetchCredentialStatus = useCallback(async () => {
+    if (!siteId) return;
+    const res = await fetch(`/api/sites/indexing-credentials?siteId=${siteId}`);
+    if (res.ok) {
+      const data = await res.json();
+      setHasCredentials(data.hasCredentials);
+      if (!data.hasCredentials) setShowCredentialForm(true);
+    }
+  }, [siteId]);
+
   useEffect(() => {
     fetchRequests();
-  }, [fetchRequests]);
+    fetchCredentialStatus();
+  }, [fetchRequests, fetchCredentialStatus]);
+
+  async function saveCredentials() {
+    setCredentialError("");
+    setSavingCredentials(true);
+    try {
+      const res = await fetch("/api/sites/indexing-credentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId, serviceAccountJson: credentialJson }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCredentialError(data.error || "Opslaan mislukt");
+        return;
+      }
+      setHasCredentials(true);
+      setShowCredentialForm(false);
+      setCredentialJson("");
+    } finally {
+      setSavingCredentials(false);
+    }
+  }
+
+  async function removeCredentials() {
+    setSavingCredentials(true);
+    try {
+      await fetch("/api/sites/indexing-credentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId, serviceAccountJson: null }),
+      });
+      setHasCredentials(false);
+      setShowCredentialForm(true);
+    } finally {
+      setSavingCredentials(false);
+    }
+  }
 
   async function submitUrl() {
     if (!newUrl.trim()) return;
@@ -104,6 +161,8 @@ export default function IndexingPage() {
   function handleSiteChange(nextSiteId: string) {
     setSiteId(nextSiteId);
     updateSiteInUrl(nextSiteId);
+    setHasCredentials(null);
+    setShowCredentialForm(false);
   }
 
   return (
@@ -124,6 +183,74 @@ export default function IndexingPage() {
         )}
       </div>
 
+      {/* Google service account setup */}
+      {siteId && hasCredentials !== null && (
+        <div className={`rounded-lg border p-4 space-y-3 ${hasCredentials ? "border-green-200 bg-green-50 dark:bg-green-950/20" : "border-amber-200 bg-amber-50 dark:bg-amber-950/20"}`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {hasCredentials ? (
+                <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+              ) : (
+                <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+              )}
+              <span className="text-sm font-medium">
+                {hasCredentials ? "Google service account gekoppeld" : "Geen Google service account ingesteld"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {hasCredentials && (
+                <Button variant="ghost" size="sm" onClick={removeCredentials} disabled={savingCredentials} className="text-destructive text-xs h-7">
+                  Verwijderen
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setShowCredentialForm((v) => !v)}
+              >
+                {showCredentialForm ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                {hasCredentials ? "Wijzigen" : "Instellen"}
+              </Button>
+            </div>
+          </div>
+
+          {!hasCredentials && !showCredentialForm && (
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              Stel een Google service account in om URLs te kunnen indienen bij Google.
+            </p>
+          )}
+
+          {showCredentialForm && (
+            <div className="space-y-3 pt-1">
+              <div className="text-xs text-muted-foreground space-y-1">
+                <p className="font-medium">Hoe stel je dit in:</p>
+                <ol className="list-decimal list-inside space-y-0.5 pl-1">
+                  <li>Ga naar <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="underline">Google Cloud Console</a> → maak een project aan</li>
+                  <li>Activeer de <strong>Indexing API</strong> in de bibliotheek</li>
+                  <li>Maak een service account aan → download de JSON-sleutel</li>
+                  <li>Voeg het service account e-mailadres toe als <strong>eigenaar</strong> in <a href="https://search.google.com/search-console" target="_blank" rel="noopener noreferrer" className="underline">Search Console</a></li>
+                  <li>Plak de inhoud van de JSON-sleutel hieronder</li>
+                </ol>
+              </div>
+              <Textarea
+                value={credentialJson}
+                onChange={(e) => setCredentialJson(e.target.value)}
+                placeholder={'{\n  "type": "service_account",\n  "client_email": "...",\n  "private_key": "..."\n}'}
+                rows={6}
+                className="font-mono text-xs"
+              />
+              {credentialError && (
+                <p className="text-xs text-destructive">{credentialError}</p>
+              )}
+              <Button size="sm" onClick={saveCredentials} disabled={savingCredentials || !credentialJson.trim()}>
+                {savingCredentials ? "Opslaan..." : "Opslaan"}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Submit URL */}
       <div className="flex gap-3">
         <Input
@@ -133,7 +260,7 @@ export default function IndexingPage() {
           placeholder="https://jouwsite.nl/nieuw-artikel"
           className="flex-1"
         />
-        <Button onClick={submitUrl} disabled={submitting || !newUrl.trim()}>
+        <Button onClick={submitUrl} disabled={submitting || !newUrl.trim() || !hasCredentials}>
           {submitting ? "Bezig..." : "Indienen"}
         </Button>
       </div>

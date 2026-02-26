@@ -207,11 +207,13 @@ function buildAntiAiInstruction(language: string): string {
 De volgende zinnen en patronen zijn VERBODEN. Ze mogen NOOIT voorkomen, ook niet als lichte variant of parafrase:
 
 Verboden openingsclichés:
-- "In een wereld van...", "In de wereld van...", "In het huidige digitale landschap..."
-- "We leven in een tijdperk...", "Nu meer dan ooit...", "Meer dan ooit tevoren..."
+- Elke "In [de/een/het] [bijvoeglijk naamwoord?] wereld" opener: "In een wereld van", "In de wereld van", "In de dynamische wereld van", "In de huidige digitale wereld", "In het huidige digitale landschap", "In de hedendaagse digitale arena", "In de moderne wereld van"
+- "We leven in een tijdperk...", "Nu meer dan ooit...", "Meer dan ooit tevoren...", "In dit tijdperk van..."
 - "In dit artikel...", "In dit blog...", "Vandaag nemen we je mee...", "In deze gids..."
 - "Laten we eens kijken...", "Laten we duiken in...", "Laten we beginnen met..."
 - "Stel je voor dat...", "Wist je dat...", "Ben jij ook..."
+- "Steeds meer bedrijven/organisaties/mensen ontdekken dat..." — dit zinpatroon is volledig verboden
+- "De afgelopen jaren heeft [X] zich bewezen als..." — luie superlatiefopener
 
 Verboden vulzinnen:
 - "Het is belangrijk om te weten dat...", "Het is cruciaal dat...", "Het is essentieel dat..."
@@ -686,10 +688,17 @@ export async function generateEnhancedArticle(
         content: `You are a professional ${language} blog writer and SEO specialist. Write comprehensive, engaging, well-structured blog articles.
 
 ABSOLUTE RULES — never violate these, regardless of topic or any other instruction:
-1. NEVER open with phrases like: "In een wereld van", "In de wereld van", "In het huidige digitale landschap", "In de huidige digitale wereld", "In de hedendaagse digitale arena", "We leven in een tijdperk", "Nu meer dan ooit", "Meer dan ooit tevoren", "In dit artikel", "In dit blog", "Vandaag nemen we je mee", "In deze gids", "Laten we eens kijken", "Laten we duiken in", "Laten we beginnen met", "Stel je voor dat", "Wist je dat", "Ben jij ook".
+1. NEVER start a sentence — especially the opening paragraph — with ANY of these patterns:
+   - Any "In [de/een/het] [adjective?] wereld" opener: "In een wereld van", "In de wereld van", "In de dynamische wereld van", "In de huidige digitale wereld", "In het huidige digitale landschap", "In de hedendaagse digitale arena", "In de moderne wereld van", etc.
+   - "We leven in een tijdperk", "Nu meer dan ooit", "Meer dan ooit tevoren", "In dit tijdperk van"
+   - "In dit artikel", "In dit blog", "Vandaag nemen we je mee", "In deze gids", "In deze blog"
+   - "Laten we eens kijken", "Laten we duiken in", "Laten we beginnen met", "Laten we eens"
+   - "Stel je voor dat", "Wist je dat", "Ben jij ook"
+   - "Steeds meer bedrijven ontdekken dat", "Steeds meer organisaties ontdekken", "Steeds meer [noun] ontdekken/zien/merken dat" — this entire sentence pattern is forbidden
+   - "De afgelopen jaren heeft [X] zich bewezen als" — lazy superlative opener
 2. NEVER use filler phrases: "Het is belangrijk om te weten dat", "Het is cruciaal dat", "Het is essentieel dat", "De sleutel tot succes is", "Zoals we allemaal weten", "Zoals je misschien weet", "Als het gaat om", "Als we kijken naar", "Er kan worden geconcludeerd dat", "Samenvattend kunnen we zeggen".
 3. NEVER use: "de ultieme gids", "de complete handleiding", "alles wat je moet weten", "wellicht", "mogelijk zou het kunnen dat".
-4. ALWAYS start the article with a direct, concrete statement, sharp fact, or strong observation. Zero warm-up.
+4. ALWAYS start the article by immediately stating a concrete fact, claim, number, or opinion. No scene-setting, no framing, no warm-up sentences.
 5. Write in active voice. Write like a knowledgeable colleague explaining something — not a formal report or AI assistant.`,
       },
       {

@@ -80,7 +80,7 @@ export async function generateFeaturedImage(
 ): Promise<Buffer> {
   const response = await getClient().images.generate({
     model: "dall-e-3",
-    prompt: `Create a professional, clean, modern blog featured image for an article titled "${title}" about "${topic}". The image should be visually appealing, minimal, and suitable for a professional blog. No text in the image.`,
+    prompt: `Create a professional, clean, modern blog featured image for an article titled "${title}" about "${topic}". The image should be visually appealing, minimal, and suitable for a professional blog. IMPORTANT: Do not include any text, letters, words, numbers, labels, captions, or writing of any kind anywhere in the image.`,
     n: 1,
     size: "1792x1024",
     quality: "standard",
@@ -1036,7 +1036,7 @@ export async function generateInArticleImage(
   const client = getClient();
   const response = await client.images.generate({
     model: "dall-e-3",
-    prompt: `Create a clean, professional illustration for a blog section about "${sectionHeading}" in an article about "${topic}". Context: ${articleContext.substring(0, 200)}. The image should be informative, minimal, modern, and suitable for a professional blog. No text in the image.`,
+    prompt: `Create a clean, professional illustration for a blog section about "${sectionHeading}" in an article about "${topic}". Context: ${articleContext.substring(0, 200)}. The image should be informative, minimal, modern, and suitable for a professional blog. IMPORTANT: Do not include any text, letters, words, numbers, labels, captions, or writing of any kind anywhere in the image.`,
     n: 1,
     size: "1024x1024",
     quality: "standard",

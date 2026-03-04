@@ -32,7 +32,9 @@ export async function POST(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allTopics = (cluster as any).asc_cluster_topics ?? [];
 
-  // Rescue topics stuck in "generating" whose run has been running for > 15 minutes
+  // Rescue topics stuck in "generating" whose run has been running/queued for > 15 minutes.
+  // Use created_at as fallback because started_at can be null for queued runs that never started,
+  // and NULL < date comparisons always return NULL (no match) in SQL.
   const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
   const stuckTopicIds: string[] = [];
   for (const t of allTopics.filter((t: { status: string }) => t.status === "generating")) {
@@ -41,7 +43,7 @@ export async function POST(request: Request) {
       .select("id")
       .eq("cluster_topic_id", t.id)
       .in("status", ["running", "queued"])
-      .lt("started_at", fifteenMinutesAgo)
+      .or(`started_at.lt.${fifteenMinutesAgo},and(started_at.is.null,created_at.lt.${fifteenMinutesAgo})`)
       .maybeSingle();
     if (stuckRun) stuckTopicIds.push(t.id);
   }

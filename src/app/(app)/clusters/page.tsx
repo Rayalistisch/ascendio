@@ -320,6 +320,34 @@ export default function ClustersPage() {
     }
   }
 
+  async function retryTopic(topic: ClusterTopic, clusterId: string) {
+    // Reset topic to pending, then re-enqueue via generate API
+    await fetch("/api/clusters/topics", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: topic.id, status: "pending" }),
+    });
+    const cluster = clusters.find((c) => c.id === clusterId);
+    const res = await fetch("/api/clusters/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clusterId,
+        topicIds: [topic.id],
+        generationSettings: cluster?.generation_settings
+          ? normalizeGenerationSettings(cluster.generation_settings)
+          : undefined,
+      }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      window.alert(data.error || "Opnieuw proberen mislukt");
+    }
+    setLogTopicId(null);
+    setRunLogs([]);
+    await fetchTopics(clusterId);
+  }
+
   async function openRunLogs(topic: ClusterTopic) {
     if (logTopicId === topic.id) {
       setLogTopicId(null);
@@ -1563,6 +1591,14 @@ export default function ClustersPage() {
                                       ))}
                                     </div>
                                   )}
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="mt-2 text-xs"
+                                    onClick={() => retryTopic(topic, cluster.id)}
+                                  >
+                                    Opnieuw proberen
+                                  </Button>
                                 </div>
                               )}
                               {editingTopicId === topic.id && (

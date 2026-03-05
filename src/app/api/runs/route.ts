@@ -8,6 +8,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const siteId = searchParams.get("siteId");
+  const runId = searchParams.get("runId");
   const limit = parseInt(searchParams.get("limit") || "50", 10);
 
   let query = supabase
@@ -18,6 +19,7 @@ export async function GET(request: Request) {
     .limit(limit);
 
   if (siteId) query = query.eq("site_id", siteId);
+  if (runId) query = query.eq("id", runId);
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

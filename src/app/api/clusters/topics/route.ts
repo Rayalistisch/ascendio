@@ -45,9 +45,31 @@ export async function GET(request: Request) {
     }
   }
 
+  // Fetch latest run per topic (for status + error visibility)
+  const topicIds = topics.map((t) => t.id);
+  let latestRunByTopic: Record<string, { id: string; status: string; error_message: string | null }> = {};
+  if (topicIds.length > 0) {
+    const { data: runs } = await supabase
+      .from("asc_runs")
+      .select("id, cluster_topic_id, status, error_message")
+      .in("cluster_topic_id", topicIds)
+      .order("created_at", { ascending: false });
+
+    for (const run of runs ?? []) {
+      if (run.cluster_topic_id && !latestRunByTopic[run.cluster_topic_id]) {
+        latestRunByTopic[run.cluster_topic_id] = {
+          id: run.id,
+          status: run.status,
+          error_message: run.error_message ?? null,
+        };
+      }
+    }
+  }
+
   const enrichedTopics = topics.map((t) => ({
     ...t,
     internal_post_id: t.wp_post_id ? postIdMap[t.wp_post_id] ?? null : null,
+    latest_run: latestRunByTopic[t.id] ?? null,
   }));
 
   return NextResponse.json({ topics: enrichedTopics });

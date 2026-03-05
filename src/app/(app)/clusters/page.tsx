@@ -62,6 +62,19 @@ interface WpPostOption {
   url: string;
 }
 
+interface LatestRun {
+  id: string;
+  status: string;
+  error_message: string | null;
+}
+
+interface RunLog {
+  id: string;
+  level: string;
+  message: string;
+  created_at: string;
+}
+
 interface ClusterTopic {
   id: string;
   title: string;
@@ -71,6 +84,7 @@ interface ClusterTopic {
   status: string;
   wp_post_url: string | null;
   internal_post_id: string | null;
+  latest_run: LatestRun | null;
 }
 
 interface Suggestion {
@@ -176,6 +190,11 @@ export default function ClustersPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [topics, setTopics] = useState<ClusterTopic[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(false);
+
+  // Run log viewer
+  const [logTopicId, setLogTopicId] = useState<string | null>(null);
+  const [runLogs, setRunLogs] = useState<RunLog[]>([]);
+  const [runLogsLoading, setRunLogsLoading] = useState(false);
 
   // Create cluster dialog
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -298,6 +317,30 @@ export default function ClustersPage() {
       setTopics(data.topics ?? []);
     } finally {
       if (!silent) setTopicsLoading(false);
+    }
+  }
+
+  async function openRunLogs(topic: ClusterTopic) {
+    if (logTopicId === topic.id) {
+      setLogTopicId(null);
+      setRunLogs([]);
+      return;
+    }
+    const runId = topic.latest_run?.id;
+    if (!runId) return;
+    setLogTopicId(topic.id);
+    setRunLogs([]);
+    setRunLogsLoading(true);
+    try {
+      const res = await fetch(`/api/runs?runId=${runId}`);
+      const data = await res.json();
+      const run = data.runs?.[0];
+      const logs: RunLog[] = (run?.asc_run_logs ?? []).sort(
+        (a: RunLog, b: RunLog) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      setRunLogs(logs);
+    } finally {
+      setRunLogsLoading(false);
     }
   }
 
@@ -1472,11 +1515,51 @@ export default function ClustersPage() {
                                       <ExternalLink className="h-4 w-4" />
                                     </a>
                                   )}
+                                  {(topic.status === "generating" || topic.status === "failed") && topic.latest_run && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => openRunLogs(topic)}
+                                      title="Bekijk logs"
+                                      className={logTopicId === topic.id ? "text-primary" : "text-muted-foreground"}
+                                    >
+                                      <span className="text-xs">Logs</span>
+                                    </Button>
+                                  )}
                                   <Button variant="ghost" size="sm" onClick={() => deleteTopic(topic.id, cluster.id)} className="text-destructive">
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </div>
                               </div>
+                              {logTopicId === topic.id && (
+                                <div className="border-t bg-muted/20 px-3 py-3">
+                                  {topic.latest_run?.error_message && (
+                                    <p className="text-xs text-destructive mb-2 font-medium">
+                                      Fout: {topic.latest_run.error_message}
+                                    </p>
+                                  )}
+                                  {runLogsLoading ? (
+                                    <p className="text-xs text-muted-foreground">Logs laden...</p>
+                                  ) : runLogs.length === 0 ? (
+                                    <p className="text-xs text-muted-foreground">Geen logs gevonden.</p>
+                                  ) : (
+                                    <div className="space-y-1 max-h-48 overflow-y-auto font-mono">
+                                      {runLogs.map((log) => (
+                                        <div key={log.id} className="flex gap-2 text-xs">
+                                          <span className={
+                                            log.level === "error" ? "text-destructive shrink-0" :
+                                            log.level === "warn" ? "text-yellow-600 shrink-0" :
+                                            "text-muted-foreground shrink-0"
+                                          }>
+                                            {new Date(log.created_at).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                                          </span>
+                                          <span className={log.level === "error" ? "text-destructive" : ""}>{log.message}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                               {editingTopicId === topic.id && (
                                 <div className="border-t bg-muted/20 px-3 py-3 space-y-3">
                                   <div className="space-y-1.5">

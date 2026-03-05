@@ -19,16 +19,23 @@ export async function enqueueGenerateJob(params: {
 }
 
 function getAppUrl(): string {
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`;
-  }
-
+  // Prefer explicitly configured URLs over auto-detected Vercel URLs.
+  // VERCEL_URL is deployment-specific (changes per deploy, may have protection enabled).
+  // VERCEL_PROJECT_PRODUCTION_URL is the stable production URL.
   if (process.env.APP_URL) {
     return process.env.APP_URL;
   }
 
   if (process.env.NEXT_PUBLIC_APP_URL) {
     return process.env.NEXT_PUBLIC_APP_URL;
+  }
+
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
   }
 
   const localPort = process.env.PORT || "3000";
@@ -119,6 +126,7 @@ async function publishToQStash(
   }
 
   const destination = `${appUrl}${path}`;
+  console.log(`[qstash] Publiceren naar: ${destination}`);
   const response = await fetch(`${QSTASH_URL}/v2/publish/${destination}`, {
     method: "POST",
     headers: {

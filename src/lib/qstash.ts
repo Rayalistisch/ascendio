@@ -22,24 +22,23 @@ function getAppUrl(): string {
   // Prefer explicitly configured URLs over auto-detected Vercel URLs.
   // VERCEL_URL is deployment-specific (changes per deploy, may have protection enabled).
   // VERCEL_PROJECT_PRODUCTION_URL is the stable production URL.
+  let url: string | undefined;
+
   if (process.env.APP_URL) {
-    return process.env.APP_URL;
+    url = process.env.APP_URL;
+  } else if (process.env.NEXT_PUBLIC_APP_URL) {
+    url = process.env.NEXT_PUBLIC_APP_URL;
+  } else if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    url = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  } else if (process.env.VERCEL_URL) {
+    url = `https://${process.env.VERCEL_URL}`;
+  } else {
+    const localPort = process.env.PORT || "3000";
+    url = `http://localhost:${localPort}`;
   }
 
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    return process.env.NEXT_PUBLIC_APP_URL;
-  }
-
-  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
-    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
-  }
-
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`;
-  }
-
-  const localPort = process.env.PORT || "3000";
-  return `http://localhost:${localPort}`;
+  // Strip trailing slash to prevent double-slash in URLs like https://example.com//api/...
+  return url.replace(/\/$/, "");
 }
 
 function isLocalAppUrl(url: string): boolean {
@@ -127,14 +126,27 @@ async function publishToQStash(
 
   const destination = `${appUrl}${path}`;
   console.log(`[qstash] Publiceren naar: ${destination}`);
+
+  // If Vercel Deployment Protection is enabled, QStash needs the bypass secret.
+  // Set VERCEL_AUTOMATION_BYPASS_SECRET in Vercel env vars (from project Settings → Deployment Protection).
+  const vercelBypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+
+  const qstashHeaders: Record<string, string> = {
+    Authorization: `Bearer ${QSTASH_TOKEN}`,
+    "Content-Type": "application/json",
+    "Upstash-Retries": String(options?.retries ?? 3),
+    "Upstash-Retry-After": String(options?.retryAfter ?? 60),
+  };
+
+  if (vercelBypassSecret) {
+    // QStash forwards headers prefixed with "Upstash-Forward-" to the destination.
+    qstashHeaders["Upstash-Forward-x-vercel-protection-bypass"] = vercelBypassSecret;
+    console.log("[qstash] Vercel protection bypass header toegevoegd");
+  }
+
   const response = await fetch(`${QSTASH_URL}/v2/publish/${destination}`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${QSTASH_TOKEN}`,
-      "Content-Type": "application/json",
-      "Upstash-Retries": String(options?.retries ?? 3),
-      "Upstash-Retry-After": String(options?.retryAfter ?? 60),
-    },
+    headers: qstashHeaders,
     body: JSON.stringify(payload),
   });
 
@@ -200,6 +212,13 @@ export async function verifyQStashSignature(
   const currentKey = process.env.QSTASH_CURRENT_SIGNING_KEY;
   const nextKey = process.env.QSTASH_NEXT_SIGNING_KEY;
 
+  // Diagnostic escape hatch: set QSTASH_SKIP_VERIFICATION=true in Vercel to bypass signature check.
+  // Only use temporarily to diagnose delivery issues. Remove after verification works.
+  if (process.env.QSTASH_SKIP_VERIFICATION === "true") {
+    console.warn("[qstash] WAARSCHUWING: QSTASH_SKIP_VERIFICATION=true — handtekening verificatie overgeslagen!");
+    return true;
+  }
+
   if (!currentKey || !nextKey) {
     // Signing keys not configured — allow the request but log a clear warning.
     // Fix: add QSTASH_CURRENT_SIGNING_KEY and QSTASH_NEXT_SIGNING_KEY to Vercel env vars.
@@ -210,44 +229,60 @@ export async function verifyQStashSignature(
     return true;
   }
 
-  if (!signature) return false;
+  if (!signature) {
+    console.warn("[qstash] Geen upstash-signature header — verzoek geweigerd");
+    return false;
+  }
 
   const { createHmac, createHash } = await import("crypto");
 
   // QStash v2 sends JWT signatures (3 dot-separated parts).
   // Local dev fire-and-forget uses a raw HMAC-SHA256 base64 string.
-  const isJwt = signature.split(".").length === 3;
+  const parts = signature.split(".");
+  const isJwt = parts.length === 3;
+  console.log(`[qstash] Handtekening type: ${isJwt ? "JWT (QStash v2)" : "HMAC (lokaal)"}, lengte: ${signature.length}`);
 
   if (isJwt) {
     // Verify QStash v2 JWT: HS256 signature over "header.payload",
     // with payload.body = SHA-256 of request body (base64url).
-    const parts = signature.split(".");
     const [headerB64, payloadB64, sigB64] = parts;
     const message = `${headerB64}.${payloadB64}`;
 
-    for (const key of [currentKey, nextKey]) {
+    for (const [idx, key] of [currentKey, nextKey].entries()) {
       const expectedSig = createHmac("sha256", key)
         .update(message)
         .digest("base64url");
 
-      if (expectedSig === sigB64) {
-        try {
-          const payload = JSON.parse(
-            Buffer.from(payloadB64, "base64url").toString("utf8")
-          );
-          // Check expiry
-          if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) {
-            console.warn("[qstash] JWT signature expired");
-            continue;
-          }
-          // Verify body hash
-          const bodyHash = createHash("sha256").update(body).digest("base64url");
-          if (payload.body === bodyHash) return true;
-        } catch {
+      const sigMatch = expectedSig === sigB64;
+      if (!sigMatch) {
+        console.warn(`[qstash] JWT HMAC mismatch voor sleutel ${idx + 1}`);
+        continue;
+      }
+
+      try {
+        const payload = JSON.parse(
+          Buffer.from(payloadB64, "base64url").toString("utf8")
+        );
+        // Check expiry
+        if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) {
+          console.warn(`[qstash] JWT verlopen (exp=${payload.exp}, nu=${Math.floor(Date.now() / 1000)})`);
           continue;
         }
+        // Verify body hash
+        const bodyHash = createHash("sha256").update(body).digest("base64url");
+        const bodyMatch = payload.body === bodyHash;
+        if (!bodyMatch) {
+          console.warn(`[qstash] Body hash mismatch — verwacht: ${payload.body}, berekend: ${bodyHash}`);
+          continue;
+        }
+        console.log("[qstash] Handtekening geldig ✓");
+        return true;
+      } catch (e) {
+        console.warn(`[qstash] JWT payload parse fout: ${e instanceof Error ? e.message : String(e)}`);
+        continue;
       }
     }
+    console.warn("[qstash] JWT verificatie mislukt voor alle sleutels — verzoek geweigerd");
     return false;
   }
 
@@ -257,5 +292,6 @@ export async function verifyQStashSignature(
     if (expected === signature) return true;
   }
 
+  console.warn("[qstash] HMAC verificatie mislukt — verzoek geweigerd");
   return false;
 }

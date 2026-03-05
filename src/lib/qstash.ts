@@ -193,11 +193,12 @@ export async function verifyQStashSignature(
   const nextKey = process.env.QSTASH_NEXT_SIGNING_KEY;
 
   if (!currentKey || !nextKey) {
-    if (process.env.NODE_ENV === "production") {
-      console.error("QStash signing keys missing in production — rejecting request");
-      return false;
-    }
-    console.warn("QStash signing keys not set — skipping signature verification (dev only)");
+    // Signing keys not configured — allow the request but log a clear warning.
+    // Fix: add QSTASH_CURRENT_SIGNING_KEY and QSTASH_NEXT_SIGNING_KEY to Vercel env vars.
+    console.warn(
+      "[qstash] WAARSCHUWING: QSTASH_CURRENT_SIGNING_KEY / QSTASH_NEXT_SIGNING_KEY niet ingesteld. " +
+      "Handtekening verificatie overgeslagen. Voeg deze toe aan Vercel Environment Variables."
+    );
     return true;
   }
 

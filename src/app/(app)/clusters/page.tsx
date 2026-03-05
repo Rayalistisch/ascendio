@@ -1533,6 +1533,9 @@ export default function ClustersPage() {
                               </div>
                               {logTopicId === topic.id && (
                                 <div className="border-t bg-muted/20 px-3 py-3">
+                                  <p className="text-xs text-muted-foreground mb-2">
+                                    Run status: <span className="font-medium">{topic.latest_run?.status ?? "onbekend"}</span>
+                                  </p>
                                   {topic.latest_run?.error_message && (
                                     <p className="text-xs text-destructive mb-2 font-medium">
                                       Fout: {topic.latest_run.error_message}
@@ -1541,7 +1544,9 @@ export default function ClustersPage() {
                                   {runLogsLoading ? (
                                     <p className="text-xs text-muted-foreground">Logs laden...</p>
                                   ) : runLogs.length === 0 ? (
-                                    <p className="text-xs text-muted-foreground">Geen logs gevonden.</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      Geen logs — worker is nog niet gestart (run staat op &quot;queued&quot; of handtekening verificatie mislukt).
+                                    </p>
                                   ) : (
                                     <div className="space-y-1 max-h-48 overflow-y-auto font-mono">
                                       {runLogs.map((log) => (

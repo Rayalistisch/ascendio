@@ -87,40 +87,66 @@ export async function POST(request: Request) {
     generationSettings ?? cluster.generation_settings
   );
 
-  // For pages mode: generate pillar page first if not yet published
+  // For pages mode: if pillar not yet published, only enqueue the pillar.
+  // The pillar worker will auto-enqueue child topics after it publishes,
+  // avoiding the race condition of child topics checking for a pillar that isn't ready.
   if (contentType === "pages" && !cluster.pillar_wp_post_id) {
-    const { data: pillarRun } = await supabase
+    // Don't start a second pillar if one is already running/queued
+    const { data: existingPillarRun } = await supabase
       .from("asc_runs")
-      .insert({
-        user_id: user.id,
-        site_id: cluster.site_id,
-        status: "queued",
-        cluster_id: clusterId,
-        cluster_topic_id: null,
-        template_id: cluster.template_id || null,
-      })
       .select("id")
-      .single();
+      .eq("cluster_id", clusterId)
+      .is("cluster_topic_id", null)
+      .in("status", ["running", "queued"])
+      .maybeSingle();
 
-    if (pillarRun) {
-      try {
-        await enqueueGenerateJob({
-          runId: pillarRun.id,
-          siteId: cluster.site_id,
-          userId: user.id,
-          clusterId,
-          templateId: cluster.template_id || undefined,
-          contentType,
-          generationSettings: effectiveGenerationSettings,
-        });
-        results.push({ topicId: "pillar", runId: pillarRun.id });
-      } catch {
-        await supabase
-          .from("asc_runs")
-          .update({ status: "failed", error_message: "Pillar job queueing failed", finished_at: new Date().toISOString() })
-          .eq("id", pillarRun.id);
+    if (!existingPillarRun) {
+      const { data: pillarRun } = await supabase
+        .from("asc_runs")
+        .insert({
+          user_id: user.id,
+          site_id: cluster.site_id,
+          status: "queued",
+          cluster_id: clusterId,
+          cluster_topic_id: null,
+          template_id: cluster.template_id || null,
+        })
+        .select("id")
+        .single();
+
+      if (pillarRun) {
+        try {
+          await enqueueGenerateJob({
+            runId: pillarRun.id,
+            siteId: cluster.site_id,
+            userId: user.id,
+            clusterId,
+            templateId: cluster.template_id || undefined,
+            contentType,
+            generationSettings: effectiveGenerationSettings,
+          });
+          results.push({ topicId: "pillar", runId: pillarRun.id });
+        } catch {
+          await supabase
+            .from("asc_runs")
+            .update({ status: "failed", error_message: "Pillar job queueing failed", finished_at: new Date().toISOString() })
+            .eq("id", pillarRun.id);
+        }
       }
+    } else {
+      results.push({ topicId: "pillar", runId: existingPillarRun.id });
     }
+
+    if (results.length === 0) {
+      return NextResponse.json({ error: "Pillar job kon niet worden gestart" }, { status: 500 });
+    }
+
+    console.log(`[generate] Pillar job queued voor cluster ${clusterId} — child topics starten automatisch na pillar`);
+    await supabase
+      .from("asc_clusters")
+      .update({ status: "in_progress", updated_at: new Date().toISOString() })
+      .eq("id", clusterId);
+    return NextResponse.json({ generated: results.length, jobs: results });
   }
 
   for (const topic of targetTopics) {

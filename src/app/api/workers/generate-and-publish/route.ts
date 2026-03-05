@@ -21,6 +21,7 @@ import { selectSourceItem, markSourceItemUsed } from "@/lib/content-sources";
 import { logStep } from "@/lib/logger";
 import {
   verifyQStashSignature,
+  enqueueGenerateJob,
   enqueueSocialPostJob,
   enqueueIndexingJob,
 } from "@/lib/qstash";
@@ -210,6 +211,7 @@ function injectYouTubeMarkersAfterH2(html: string, markers: string[]): string {
 }
 
 export async function POST(request: Request) {
+  console.log("[worker] POST ontvangen");
   const rawBody = await request.text();
   const workerStartedAt = Date.now();
   const remainingMs = () => WORKER_SOFT_TIMEOUT_MS - (Date.now() - workerStartedAt);
@@ -1173,6 +1175,55 @@ export async function POST(request: Request) {
         })
         .eq("id", clusterId);
       await logStep(supabase, runId, "info", "Cluster pillar bijgewerkt");
+
+      // Auto-enqueue all pending/failed child topics now that pillar is published
+      const { data: pendingTopics } = await supabase
+        .from("asc_cluster_topics")
+        .select("id")
+        .eq("cluster_id", clusterId)
+        .in("status", ["pending", "failed"]);
+
+      for (const topic of pendingTopics ?? []) {
+        const { data: topicRun } = await supabase
+          .from("asc_runs")
+          .insert({
+            user_id: userId,
+            site_id: siteId,
+            status: "queued",
+            cluster_id: clusterId,
+            cluster_topic_id: topic.id,
+            template_id: templateId || null,
+          })
+          .select("id")
+          .single();
+
+        if (!topicRun) continue;
+
+        try {
+          await enqueueGenerateJob({
+            runId: topicRun.id,
+            siteId,
+            userId,
+            clusterId,
+            clusterTopicId: topic.id,
+            templateId,
+            contentType: effectiveContentType,
+            generationSettings: runGenerationSettings,
+          });
+          await supabase
+            .from("asc_cluster_topics")
+            .update({ status: "generating" })
+            .eq("id", topic.id);
+        } catch {
+          await supabase
+            .from("asc_runs")
+            .update({ status: "failed", error_message: "Auto-enqueue failed", finished_at: new Date().toISOString() })
+            .eq("id", topicRun.id);
+        }
+      }
+      if ((pendingTopics?.length ?? 0) > 0) {
+        await logStep(supabase, runId, "info", `${pendingTopics!.length} child topics automatisch in wachtrij geplaatst`);
+      }
     }
 
     // Check if all cluster topics are published → mark cluster as complete

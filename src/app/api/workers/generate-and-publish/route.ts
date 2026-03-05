@@ -263,12 +263,12 @@ export async function POST(request: Request) {
         MAX_INLINE_IMAGES_PER_RUN_CAP,
         payloadSettingsForPrecheck.images.inlineImageCount
       )
-    : MAX_INLINE_IMAGES_PER_RUN_CAP;
+    : 0; // default to 0 for pre-check so trial users (10 credits) aren't blocked by worst-case estimate
   const precheckCost =
     CREDIT_COSTS.blog_post_with_images +
     requestedInlineImagesForPrecheck * CREDIT_COSTS.inline_image_generation;
 
-  // Credit pre-check (worst-case for this run including inline images)
+  // Credit pre-check
   const creditCheck = await checkCredits(supabase, userId, precheckCost);
   if (!creditCheck.enough) {
     await supabase.from("asc_runs").update({
@@ -276,6 +276,13 @@ export async function POST(request: Request) {
       error_message: "Onvoldoende credits",
       finished_at: new Date().toISOString(),
     }).eq("id", runId).eq("user_id", userId);
+    // Also update cluster topic so it doesn't stay stuck in "generating"
+    if (clusterTopicId) {
+      await supabase
+        .from("asc_cluster_topics")
+        .update({ status: "failed" })
+        .eq("id", clusterTopicId);
+    }
     return NextResponse.json(
       {
         error: "Onvoldoende credits",

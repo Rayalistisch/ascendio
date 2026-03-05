@@ -497,6 +497,68 @@ function normalizeTocEntries(value: unknown): TocEntry[] {
 
 // ===== NEW FUNCTIONS =====
 
+const CLICHE_OPENING_PATTERNS = [
+  /^in (de|een|het) (huidige|moderne|hedendaagse|digitale|dynamische|snel|complexe|steeds)/i,
+  /^in (de|een|het) wereld/i,
+  /^in (een|de|het) tijdperk/i,
+  /^we leven in/i,
+  /^steeds meer/i,
+  /^nu meer dan ooit/i,
+  /^in dit (tijdperk|artikel|blog|gids|stuk|overzicht)/i,
+  /^laten we/i,
+  /^stel je voor/i,
+  /^wist je dat/i,
+  /^de afgelopen jaren heeft/i,
+  /^in today'?s/i,
+  /^in the (modern|current|digital|dynamic|ever-changing)/i,
+  /^in a world/i,
+];
+
+function hasClicheOpening(html: string): boolean {
+  const match = html.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+  if (!match) return false;
+  const text = match[1].replace(/<[^>]*>/g, "").trim();
+  return CLICHE_OPENING_PATTERNS.some((p) => p.test(text));
+}
+
+async function fixClicheOpening(
+  html: string,
+  topic: string,
+  language: string
+): Promise<string> {
+  const client = getClient();
+  const firstPMatch = html.match(/(<p[^>]*>)([\s\S]*?)(<\/p>)/i);
+  if (!firstPMatch) return html;
+
+  const badParagraph = firstPMatch[0];
+  const badText = firstPMatch[2].replace(/<[^>]*>/g, "").trim();
+
+  try {
+    const res = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.7,
+      max_tokens: 200,
+      messages: [
+        {
+          role: "system",
+          content: `Herschrijf de gegeven openingszin in het ${language}. Begin DIRECT met een concreet feit, getal, naam of scherpe stelling. NOOIT beginnen met "In de/een/het", "We leven in", "Steeds meer", "Nu meer dan ooit", "Laten we", of varianten. Geen aanloop. Geen context-setting. Geef alleen de herschreven zin terug, geen uitleg.`,
+        },
+        {
+          role: "user",
+          content: `Onderwerp: "${topic}"\nSlechte opener: "${badText}"\nHerschrijf deze opener:`,
+        },
+      ],
+    });
+
+    const fixed = res.choices[0]?.message?.content?.trim();
+    if (!fixed) return html;
+
+    return html.replace(badParagraph, `${firstPMatch[1]}${fixed}${firstPMatch[3]}`);
+  } catch {
+    return html;
+  }
+}
+
 /**
  * Two-stage enhanced article generation.
  * Stage 1: GPT-4o generates topic + title (derived from sourceContent if provided).
@@ -702,19 +764,29 @@ export async function generateEnhancedArticle(
         role: "system",
         content: `You are a professional ${language} blog writer and SEO specialist. Write comprehensive, engaging, well-structured blog articles.
 
-ABSOLUTE RULES — never violate these, regardless of topic or any other instruction:
-1. NEVER start a sentence — especially the opening paragraph — with ANY of these patterns:
-   - Any "In [de/een/het] [adjective?] wereld" opener: "In een wereld van", "In de wereld van", "In de dynamische wereld van", "In de huidige digitale wereld", "In het huidige digitale landschap", "In de hedendaagse digitale arena", "In de moderne wereld van", etc.
-   - "We leven in een tijdperk", "Nu meer dan ooit", "Meer dan ooit tevoren", "In dit tijdperk van"
-   - "In dit artikel", "In dit blog", "Vandaag nemen we je mee", "In deze gids", "In deze blog"
-   - "Laten we eens kijken", "Laten we duiken in", "Laten we beginnen met", "Laten we eens"
-   - "Stel je voor dat", "Wist je dat", "Ben jij ook"
-   - "Steeds meer bedrijven ontdekken dat", "Steeds meer organisaties ontdekken", "Steeds meer [noun] ontdekken/zien/merken dat" — this entire sentence pattern is forbidden
-   - "De afgelopen jaren heeft [X] zich bewezen als" — lazy superlative opener
-2. NEVER use filler phrases: "Het is belangrijk om te weten dat", "Het is cruciaal dat", "Het is essentieel dat", "De sleutel tot succes is", "Zoals we allemaal weten", "Zoals je misschien weet", "Als het gaat om", "Als we kijken naar", "Er kan worden geconcludeerd dat", "Samenvattend kunnen we zeggen".
-3. NEVER use: "de ultieme gids", "de complete handleiding", "alles wat je moet weten", "wellicht", "mogelijk zou het kunnen dat".
-4. ALWAYS start the article by immediately stating a concrete fact, claim, number, or opinion. No scene-setting, no framing, no warm-up sentences.
-5. Write in active voice. Write like a knowledgeable colleague explaining something — not a formal report or AI assistant.`,
+OPENING RULE — this is the single most important rule:
+The very FIRST WORD of the article must NOT be "In", "We", "Nu", "Steeds", "Laten", "Stel", "Wist", "Ben", "De afgelopen", "Er ".
+Open IMMEDIATELY with a concrete noun, number, name, or direct claim. No warm-up, no context-setting, no scene-painting.
+
+GOOD OPENING EXAMPLES (use this style):
+- "Zorgorganisaties verliezen gemiddeld €12.000 per medewerker per jaar aan inefficiënte onboarding."
+- "Klantportalen reduceren supporttickets met 40% — maar alleen als ze goed worden ingericht."
+- "De meeste bedrijven kiezen software op basis van features. Dat is precies het verkeerde criterium."
+- "Goede klantenservice kost geld. Slechte klantenservice kost meer."
+- "Drie op de vier medewerkers zoekt een andere baan binnen twaalf maanden na indiensttreding."
+
+BAD OPENING EXAMPLES — STRICTLY FORBIDDEN, even as a loose variant:
+- "In de huidige digitale wereld..." / "In een wereld van..." / "In het moderne landschap..."
+- "We leven in een tijdperk..." / "Nu meer dan ooit..."
+- "In dit artikel..." / "Vandaag nemen we je mee..." / "In deze gids..."
+- "Steeds meer bedrijven ontdekken dat..." / "Steeds meer organisaties..."
+- "De afgelopen jaren heeft [X] zich bewezen als..."
+- "Laten we eens kijken naar..." / "Stel je voor dat..."
+
+ABSOLUTE RULES — never violate these:
+1. NEVER use filler phrases: "Het is belangrijk om te weten dat", "Het is cruciaal dat", "Het is essentieel dat", "De sleutel tot succes is", "Zoals we allemaal weten", "Zoals je misschien weet", "Als het gaat om", "Als we kijken naar", "Er kan worden geconcludeerd dat", "Samenvattend kunnen we zeggen".
+2. NEVER use: "de ultieme gids", "de complete handleiding", "alles wat je moet weten", "wellicht", "mogelijk zou het kunnen dat".
+3. Write in active voice. Write like a knowledgeable colleague explaining something — not a formal report or AI assistant.`,
       },
       {
         role: "user",
@@ -904,11 +976,18 @@ Geef alleen JSON terug met:
       }
     : null;
 
+  // Post-processing: fix clichéd opening if GPT still produced one despite instructions
+  let finalHtml = linkEnforcement.htmlContent;
+  if (hasClicheOpening(finalHtml)) {
+    console.log("[openai] Cliché opening gedetecteerd — automatisch herschrijven...");
+    finalHtml = await fixClicheOpening(finalHtml, topic, language);
+  }
+
   return {
     topic,
     title,
     metaDescription: articleData.metaDescription,
-    htmlContent: linkEnforcement.htmlContent,
+    htmlContent: finalHtml,
     tableOfContents: articleData.tableOfContents || [],
     internalLinksUsed,
     externalLinksUsed: articleData.externalLinksUsed || [],

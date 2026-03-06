@@ -178,7 +178,7 @@ async function fetchChildSitemap(url: string): Promise<SitemapEntry[]> {
     const urlBlocks = xml.match(/<url>[\s\S]*?<\/url>/gi) ?? [];
     console.log(`[sitemap] urlBlocks found: ${urlBlocks.length}`);
     if (urlBlocks.length > 0) {
-      console.log(`[sitemap] first url block: ${urlBlocks[0].replace(/\n/g, "\\n").replace(/\r/g, "\\r").slice(0, 400)}`);
+      console.log(`[sitemap] first url block: ${(urlBlocks[0] ?? "").replace(/\n/g, "\\n").replace(/\r/g, "\\r").slice(0, 400)}`);
     }
     const entries: SitemapEntry[] = [];
     for (const block of urlBlocks) {

@@ -112,11 +112,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
         const updatedData = injectMainContent(liveElementorData, content);
         wpUpdates.meta = {
           _elementor_data: JSON.stringify(updatedData),
-          // Leeg de CSS-cache zodat Elementor op de volgende pageload regenereert
-          _elementor_css: "",
+          _elementor_css: "", // Forceer CSS-regeneratie
         };
-        console.log(`[publish] → sending via meta._elementor_data (${JSON.stringify(updatedData).length} chars) + clearing _elementor_css cache`);
-        // post_content wordt door Elementor genegeerd — NIET meesturen
+        // Stuur ook post_content mee: dit triggert wp_update_post() en save_post hooks
+        // zodat caching-plugins (WP Rocket, LiteSpeed, etc.) hun cache invalideren.
+        // Elementor leest voor rendering altijd _elementor_data, niet post_content.
+        wpUpdates.content = content;
+        console.log(`[publish] → sending via meta._elementor_data + post_content cache-bust (${JSON.stringify(updatedData).length} chars)`);
       } else {
         // Geen Elementor-data beschikbaar (API exposeert het niet) — fallback naar post_content
         console.warn(`[publish] FALLBACK post_content — _elementor_data niet beschikbaar voor post ${post.wp_post_id}`);

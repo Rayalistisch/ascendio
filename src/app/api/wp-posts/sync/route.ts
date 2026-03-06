@@ -93,9 +93,9 @@ export async function POST(request: Request) {
           ? (wp.excerpt?.rendered || wp.excerpt?.raw || "")
           : String(wp.excerpt || "");
 
-      // Elementor detection
+      // Elementor detection — site toggle overrides auto-detection
       const rawMeta = wp.meta as Record<string, unknown> | undefined;
-      const isElementor = rawMeta?._elementor_edit_mode === "builder";
+      const isElementor = site.is_elementor_site || rawMeta?._elementor_edit_mode === "builder";
       const rawElementorData = isElementor && typeof rawMeta?._elementor_data === "string"
         ? rawMeta._elementor_data as string : null;
 

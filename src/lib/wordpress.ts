@@ -344,6 +344,28 @@ export async function deletePost(
   }
 }
 
+// Fetch raw _elementor_data for a specific post (returns parsed JSON array or null)
+export async function fetchPostElementorData(
+  creds: WPCredentials,
+  postId: number,
+  options?: { collection?: WPCollection }
+): Promise<unknown[] | null> {
+  const collection = options?.collection || "posts";
+  try {
+    const res = await fetch(
+      wpApiUrl(creds, `/${collection}/${postId}?_fields=meta`),
+      { headers: { Authorization: authHeader(creds) }, signal: AbortSignal.timeout(10_000) }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const raw = data.meta?._elementor_data;
+    if (!raw || typeof raw !== "string" || raw.length < 3) return null;
+    return JSON.parse(raw) as unknown[];
+  } catch {
+    return null;
+  }
+}
+
 // Update an existing post
 export async function updatePost(
   creds: WPCredentials,

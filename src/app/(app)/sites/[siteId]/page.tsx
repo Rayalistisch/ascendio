@@ -28,6 +28,7 @@ interface SiteInfo {
   tone_of_voice: ToneOfVoice | null;
   acf_content_fields: string | null;
   sitemap_url: string | null;
+  is_elementor_site: boolean;
 }
 
 interface PreferredDomain {
@@ -71,6 +72,11 @@ export default function SiteDetailPage() {
   const [savingSitemap, setSavingSitemap] = useState(false);
   const [sitemapSaved, setSitemapSaved] = useState(false);
 
+  // Elementor
+  const [isElementorSite, setIsElementorSite] = useState(false);
+  const [savingElementor, setSavingElementor] = useState(false);
+  const [elementorSaved, setElementorSaved] = useState(false);
+
   // Tone of voice
   const [tone, setTone] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
@@ -91,6 +97,7 @@ export default function SiteDetailPage() {
         setSite(found || null);
         if (found?.acf_content_fields) setAcfContentFields(found.acf_content_fields);
         if (found?.sitemap_url) setSitemapUrl(found.sitemap_url);
+        setIsElementorSite(found?.is_elementor_site ?? false);
         if (found?.tone_of_voice) {
           const tov = found.tone_of_voice;
           setTone(tov.tone || "");
@@ -225,6 +232,26 @@ export default function SiteDetailPage() {
       }
     } finally {
       setSavingSitemap(false);
+    }
+
+  }
+
+  async function saveElementorSetting(value: boolean) {
+    setSavingElementor(true);
+    setElementorSaved(false);
+    try {
+      const res = await fetch("/api/sites", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: siteId, isElementorSite: value }),
+      });
+      if (res.ok) {
+        setIsElementorSite(value);
+        setElementorSaved(true);
+        setTimeout(() => setElementorSaved(false), 3000);
+      }
+    } finally {
+      setSavingElementor(false);
     }
   }
 
@@ -429,6 +456,30 @@ export default function SiteDetailPage() {
             {savingSitemap ? "Opslaan..." : "Sitemap URL opslaan"}
           </Button>
           {sitemapSaved && <span className="text-sm text-green-600">Opgeslagen!</span>}
+        </div>
+      </div>
+
+      {/* Elementor */}
+      <div className="rounded-xl border bg-card p-4 space-y-3">
+        <div>
+          <h2 className="font-semibold">Elementor</h2>
+          <p className="text-sm text-muted-foreground">
+            Zet dit aan als deze site Elementor gebruikt. Ascendio schrijft dan content terug naar de Elementor text-widget in plaats van post_content — zodat de opmaak intact blijft.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isElementorSite}
+            disabled={savingElementor}
+            onClick={() => saveElementorSetting(!isElementorSite)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${isElementorSite ? "bg-primary" : "bg-input"}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isElementorSite ? "translate-x-6" : "translate-x-1"}`} />
+          </button>
+          <span className="text-sm">{isElementorSite ? "Elementor ingeschakeld" : "Elementor uitgeschakeld"}</span>
+          {elementorSaved && <span className="text-sm text-green-600">Opgeslagen!</span>}
         </div>
       </div>
 

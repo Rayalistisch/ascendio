@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { updatePost } from "@/lib/wordpress";
+import { updatePost, fetchPostElementorData } from "@/lib/wordpress";
 import { decrypt } from "@/lib/encryption";
 import { normalizeGenerationSettings } from "@/lib/generation-settings";
 import { injectMainContent } from "@/app/api/wp-posts/sync/route";
@@ -76,7 +76,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
 
   const { data: post } = await supabase
     .from("asc_wp_posts")
-    .select("*, asc_sites(wp_base_url, wp_username, wp_app_password_encrypted, acf_content_fields)")
+    .select("*, asc_sites(wp_base_url, wp_username, wp_app_password_encrypted, acf_content_fields, is_elementor_site)")
     .eq("id", postId)
     .eq("user_id", user.id)
     .single();
@@ -99,11 +99,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
       ? site.acf_content_fields.split(",").map((f: string) => f.trim()).filter(Boolean)
       : [];
 
-    if (content && post.is_elementor && post.elementor_data) {
-      // Elementor-site: injecteer content terug in de text-editor widget JSON
-      const updatedData = injectMainContent(post.elementor_data as unknown[], content);
-      wpUpdates.meta = { _elementor_data: JSON.stringify(updatedData) };
-      // post_content wordt door Elementor genegeerd — niet meesturen
+    const isElementor = site.is_elementor_site || post.is_elementor;
+
+    if (content && isElementor) {
+      // Elementor-site: haal altijd de verse _elementor_data op van WP zodat we nooit
+      // verouderde of ontbrekende data gebruiken, en injecteer de content in de text widget.
+      const liveElementorData = await fetchPostElementorData(creds, post.wp_post_id)
+        ?? (post.elementor_data as unknown[] | null);
+      if (liveElementorData) {
+        const updatedData = injectMainContent(liveElementorData, content);
+        wpUpdates.meta = { _elementor_data: JSON.stringify(updatedData) };
+        // post_content wordt door Elementor genegeerd — NIET meesturen
+      } else {
+        // Geen Elementor-data beschikbaar (API exposeert het niet) — fallback naar post_content
+        console.warn(`[publish] Elementor site but no _elementor_data found for post ${post.wp_post_id}, falling back to post_content`);
+        wpUpdates.content = content;
+      }
     } else if (content && acfFields.length > 0) {
       // ACF-site: verdeel content over alle geconfigureerde WYSIWYG velden
       const chunks = splitHtmlByH2(content, acfFields.length);
@@ -122,7 +133,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
   const dbUpdates: Record<string, unknown> = {};
   if (title) dbUpdates.title = title;
   if (content) dbUpdates.content = content;
-  if (content && post.is_elementor && post.elementor_data) {
+  if (content && (site?.is_elementor_site || post.is_elementor) && post.elementor_data) {
     dbUpdates.elementor_data = injectMainContent(post.elementor_data as unknown[], content);
   }
   if (excerpt) dbUpdates.excerpt = excerpt;

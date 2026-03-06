@@ -112,7 +112,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
         const updatedData = injectMainContent(liveElementorData, content);
         wpUpdates.meta = {
           _elementor_data: JSON.stringify(updatedData),
-          _elementor_css: "", // Forceer CSS-regeneratie
         };
         // Stuur ook post_content mee: dit triggert wp_update_post() en save_post hooks
         // zodat caching-plugins (WP Rocket, LiteSpeed, etc.) hun cache invalideren.

@@ -411,6 +411,14 @@ export async function updatePost(
     throw new Error(`Failed to update post: ${response.status} ${body.substring(0, 200)}`);
   }
   const post = await response.json();
+  // Log if meta keys in the request are present in the response (verifies WP actually saved them)
+  if (updates.meta) {
+    for (const key of Object.keys(updates.meta)) {
+      const sentLen = updates.meta[key].length;
+      const gotLen = typeof post.meta?.[key] === "string" ? (post.meta[key] as string).length : -1;
+      console.log(`[updatePost] meta.${key}: sent ${sentLen} chars, WP returned ${gotLen} chars`);
+    }
+  }
   return { id: post.id, url: post.link };
 }
 

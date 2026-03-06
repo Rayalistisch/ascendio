@@ -24,6 +24,12 @@ interface Site {
   name: string;
 }
 
+interface WpPost {
+  id: string;
+  title: string;
+  content: string;
+}
+
 // All available section types for SEO/GEO optimized content
 const SECTION_TYPES = {
   h2: { label: "H2 Heading", badge: "H2", color: "secondary" as const },
@@ -60,6 +66,17 @@ interface ArticleTemplate {
   is_default: boolean;
   structure: TemplateSection[];
   created_at: string;
+}
+
+function parseStructureFromHtml(html: string): TemplateSection[] {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const sections: TemplateSection[] = [];
+  doc.body.querySelectorAll("h2, h3").forEach((el) => {
+    const type = el.tagName.toLowerCase() as "h2" | "h3";
+    const label = el.textContent?.trim() ?? "";
+    if (label) sections.push({ type, label, instruction: "" });
+  });
+  return sections;
 }
 
 function createEmptySection(type: SectionType = "h2"): TemplateSection {
@@ -149,6 +166,11 @@ export default function TemplatesPage() {
   const [sections, setSections] = useState<TemplateSection[]>([createEmptySection()]);
   const [saving, setSaving] = useState(false);
 
+  // Import from post
+  const [importPosts, setImportPosts] = useState<WpPost[]>([]);
+  const [importPostId, setImportPostId] = useState("");
+  const [importLoading, setImportLoading] = useState(false);
+
   function updateSiteInUrl(nextSiteId: string) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("siteId", nextSiteId);
@@ -195,7 +217,24 @@ export default function TemplatesPage() {
     setDescription("");
     setIsDefault(false);
     setSections([createEmptySection()]);
+    setImportPostId("");
+    setImportPosts([]);
     setDialogOpen(true);
+    // Lazy-load posts for import picker
+    if (siteId) {
+      setImportLoading(true);
+      fetch(`/api/wp-posts?siteId=${siteId}`)
+        .then((r) => r.json())
+        .then((d) => setImportPosts(d.posts ?? []))
+        .finally(() => setImportLoading(false));
+    }
+  }
+
+  function importFromPost() {
+    const post = importPosts.find((p) => p.id === importPostId);
+    if (!post?.content) return;
+    const parsed = parseStructureFromHtml(post.content);
+    if (parsed.length > 0) setSections(parsed);
   }
 
   function loadPreset(preset: typeof PRESETS[number]) {
@@ -307,14 +346,42 @@ export default function TemplatesPage() {
               <div className="space-y-4 pt-2">
                 {/* Presets */}
                 {!editingId && (
-                  <div className="space-y-2">
-                    <Label className="text-xs font-semibold text-muted-foreground">Snel starten met preset</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {PRESETS.map((preset) => (
-                        <Button key={preset.name} variant="outline" size="sm" onClick={() => loadPreset(preset)}>
-                          {preset.name}
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label className="text-xs font-semibold text-muted-foreground">Snel starten met preset</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {PRESETS.map((preset) => (
+                          <Button key={preset.name} variant="outline" size="sm" onClick={() => loadPreset(preset)}>
+                            {preset.name}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-semibold text-muted-foreground">Of importeer structuur uit bestaande post</Label>
+                      <div className="flex gap-2">
+                        <NativeSelect
+                          value={importPostId}
+                          onChange={(e) => setImportPostId(e.target.value)}
+                          className="flex-1 text-sm"
+                          disabled={importLoading || importPosts.length === 0}
+                        >
+                          <option value="">
+                            {importLoading ? "Posts laden..." : importPosts.length === 0 ? "Geen posts gevonden" : "Kies een post..."}
+                          </option>
+                          {importPosts.map((p) => (
+                            <option key={p.id} value={p.id}>{p.title}</option>
+                          ))}
+                        </NativeSelect>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={importFromPost}
+                          disabled={!importPostId}
+                        >
+                          Importeer H2/H3
                         </Button>
-                      ))}
+                      </div>
                     </div>
                   </div>
                 )}

@@ -1174,9 +1174,11 @@ export async function rewriteContentWithPrompt(
   userPrompt: string,
   keywords?: string[],
   toneOfVoice?: ToneOfVoice | null,
-  generationSettings?: GenerationSettings
+  generationSettings?: GenerationSettings,
+  language?: string
 ): Promise<{ htmlContent: string; metaDescription: string; metaTitle: string }> {
   const client = getClient();
+  const lang = language || "Dutch";
   const settings = normalizeGenerationSettings(generationSettings);
   const toneInstruction = buildToneOfVoiceInstruction(toneOfVoice);
   const targetWordCount = settings.structure.targetWordCount;
@@ -1241,7 +1243,7 @@ export async function rewriteContentWithPrompt(
     settings.structure.faqCount > 0
       ? `Include a FAQ section at the end with <h2> and ${settings.structure.faqCount} <h3> question/answer pairs.`
       : "Do not include a FAQ section unless the user's instruction explicitly asks for it.";
-  const antiAiInstruction = buildAntiAiInstruction("Dutch");
+  const antiAiInstruction = buildAntiAiInstruction(lang);
   const response = await client.chat.completions.create({
     model: "gpt-4o",
     temperature: 0.7,
@@ -1249,6 +1251,8 @@ export async function rewriteContentWithPrompt(
       {
         role: "system",
         content: `You are an expert SEO content editor. Rewrite the provided HTML content according to the user's instructions.
+
+IMPORTANT: Write the ENTIRE content in ${lang}. Do NOT switch to another language under any circumstances.
 
 ## OUTPUT FORMAT REQUIREMENTS:
 - Use proper HTML tags: <h2>, <h3> for headings (NO <h1>), <p> for paragraphs, <ul>/<ol>/<li> for lists

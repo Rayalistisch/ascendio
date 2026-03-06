@@ -419,12 +419,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ pos
     ].filter((item): item is string => typeof item === "string" && item.trim().length > 0))
   );
 
+  const postLanguage = detectPostLanguage(
+    `${post.title || ""} ${post.content || ""}`,
+    siteRecord?.default_language || "Dutch"
+  );
+
   const result = await rewriteContentWithPrompt(
     post.content || "",
     prompt,
     mergedKeywords.length > 0 ? mergedKeywords : undefined,
     toneOfVoice,
-    effectiveGenerationSettings
+    effectiveGenerationSettings,
+    postLanguage
   );
 
   const focusKeyword =
@@ -449,12 +455,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ pos
         const canonicalHtml = canonicalizeYouTubeMarkers(
           canonicalizeImageMarkers(rewrittenHtml)
         );
-        const detectedLanguage = detectPostLanguage(
-          `${post.title || ""} ${rewrittenHtml}`,
-          siteRecord?.default_language || "Dutch"
-        );
         const humanized = await humanizeArticleDraft({
-          language: detectedLanguage,
+          language: postLanguage,
           topic: focusKeyword || post.title || "Artikel",
           title: post.title || focusKeyword || "Artikel",
           targetKeywords: mergedKeywords,

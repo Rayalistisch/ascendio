@@ -71,11 +71,39 @@ interface ArticleTemplate {
 function parseStructureFromHtml(html: string): TemplateSection[] {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const sections: TemplateSection[] = [];
-  doc.body.querySelectorAll("h2, h3").forEach((el) => {
-    const type = el.tagName.toLowerCase() as "h2" | "h3";
-    const label = el.textContent?.trim() ?? "";
-    if (label) sections.push({ type, label, instruction: "" });
+
+  const TAG_MAP: Record<string, SectionType> = {
+    h2: "h2", h3: "h3",
+    p: "paragraph",
+    ul: "bullets",
+    ol: "numbered",
+    blockquote: "blockquote",
+    table: "table",
+  };
+
+  // Walk top-level block elements; for headings use text as label,
+  // for other types collapse consecutive duplicates into one entry.
+  const HEADINGS = new Set(["h2", "h3"]);
+
+  doc.body.querySelectorAll("h2, h3, p, ul, ol, blockquote, table").forEach((el) => {
+    const tag = el.tagName.toLowerCase();
+    const type = TAG_MAP[tag];
+    if (!type) return;
+
+    const text = el.textContent?.trim() ?? "";
+    if (!text) return;
+
+    if (HEADINGS.has(tag)) {
+      sections.push({ type, label: text, instruction: "" });
+    } else {
+      // Collapse: don't add same non-heading type consecutively
+      const last = sections[sections.length - 1];
+      if (!last || last.type !== type) {
+        sections.push({ type, label: "", instruction: "" });
+      }
+    }
   });
+
   return sections;
 }
 

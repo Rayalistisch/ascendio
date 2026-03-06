@@ -135,6 +135,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
 
     if (Object.keys(wpUpdates).length > 0) {
       await updatePost(creds, post.wp_post_id, wpUpdates);
+
+      // Verificatie: haal _elementor_data opnieuw op en controleer of onze wijziging erin zit
+      if (isElementor && content) {
+        const verifyData = await fetchPostElementorData(creds, post.wp_post_id);
+        if (verifyData) {
+          const verifyJson = JSON.stringify(verifyData);
+          const firstH2 = content.match(/<h2[^>]*>(.*?)<\/h2>/i)?.[1] ?? content.slice(0, 40);
+          const found = verifyJson.includes(firstH2.slice(0, 20));
+          console.log(`[verify] _elementor_data na update: ${verifyJson.length} chars, bevat nieuwe H2 "${firstH2.slice(0, 30)}": ${found}`);
+        } else {
+          console.warn(`[verify] kon _elementor_data niet ophalen na update`);
+        }
+      }
     }
   }
 

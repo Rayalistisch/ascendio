@@ -3,6 +3,44 @@ import { createClient } from "@/lib/supabase/server";
 import { fetchAllPosts } from "@/lib/wordpress";
 import { decrypt } from "@/lib/encryption";
 
+// ── Elementor helpers ─────────────────────────────────────────
+
+type ElementorElement = {
+  elType?: string;
+  widgetType?: string;
+  settings?: Record<string, unknown>;
+  elements?: ElementorElement[];
+};
+
+function collectTextWidgets(elements: ElementorElement[]): ElementorElement[] {
+  const result: ElementorElement[] = [];
+  for (const el of elements) {
+    if (el.elType === "widget" && el.widgetType === "text-editor") result.push(el);
+    if (el.elements?.length) result.push(...collectTextWidgets(el.elements));
+  }
+  return result;
+}
+
+function extractMainContent(elements: unknown[]): string {
+  const widgets = collectTextWidgets(elements as ElementorElement[]);
+  if (widgets.length === 0) return "";
+  const best = widgets.reduce((a, b) =>
+    String(b.settings?.editor ?? "").length > String(a.settings?.editor ?? "").length ? b : a
+  );
+  return String(best.settings?.editor ?? "");
+}
+
+export function injectMainContent(elements: unknown[], newHtml: string): unknown[] {
+  const cloned = JSON.parse(JSON.stringify(elements)) as ElementorElement[];
+  const widgets = collectTextWidgets(cloned);
+  if (widgets.length === 0) return cloned;
+  const best = widgets.reduce((a, b) =>
+    String(b.settings?.editor ?? "").length > String(a.settings?.editor ?? "").length ? b : a
+  );
+  if (best.settings) best.settings.editor = newHtml;
+  return cloned;
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const {
@@ -55,6 +93,17 @@ export async function POST(request: Request) {
           ? (wp.excerpt?.rendered || wp.excerpt?.raw || "")
           : String(wp.excerpt || "");
 
+      // Elementor detection
+      const rawMeta = wp.meta as Record<string, unknown> | undefined;
+      const isElementor = rawMeta?._elementor_edit_mode === "builder";
+      const rawElementorData = isElementor && typeof rawMeta?._elementor_data === "string"
+        ? rawMeta._elementor_data as string : null;
+
+      let elementorData: unknown[] | null = null;
+      if (rawElementorData && rawElementorData.length > 2) {
+        try { elementorData = JSON.parse(rawElementorData); } catch { /* ignore */ }
+      }
+
       // ACF: als de site acf_content_fields heeft geconfigureerd,
       // lees content uit die ACF WYSIWYG velden i.p.v. post_content.
       const acfFields = site.acf_content_fields
@@ -66,9 +115,11 @@ export async function POST(request: Request) {
         : "";
 
       const content = acfContent ||
-        (typeof wp.content === "object"
-          ? (wp.content?.rendered || wp.content?.raw || "")
-          : String(wp.content || ""));
+        (isElementor && elementorData
+          ? (extractMainContent(elementorData) || (typeof wp.content === "object" ? (wp.content?.rendered || "") : String(wp.content || "")))
+          : (typeof wp.content === "object"
+              ? (wp.content?.rendered || wp.content?.raw || "")
+              : String(wp.content || "")));
 
       const featuredImageUrl =
         wp.featured_media_url || wp._embedded?.["wp:featuredmedia"]?.[0]?.source_url || null;
@@ -85,6 +136,8 @@ export async function POST(request: Request) {
             url: wp.link || "",
             excerpt,
             content,
+            is_elementor: isElementor,
+            elementor_data: elementorData ?? null,
             status: wp.status || "publish",
             categories: wp.categories || [],
             tags: wp.tags || [],

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { updatePost } from "@/lib/wordpress";
 import { decrypt } from "@/lib/encryption";
 import { normalizeGenerationSettings } from "@/lib/generation-settings";
+import { injectMainContent } from "@/app/api/wp-posts/sync/route";
 
 /**
  * Split HTML content across `count` buckets by H2 section boundaries.
@@ -90,7 +91,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
       username: site.wp_username,
       appPassword: decrypt(site.wp_app_password_encrypted),
     };
-    const wpUpdates: { title?: string; content?: string; excerpt?: string; acf?: Record<string, string> } = {};
+    const wpUpdates: { title?: string; content?: string; excerpt?: string; meta?: Record<string, string>; acf?: Record<string, string> } = {};
     if (title) wpUpdates.title = title;
     if (excerpt) wpUpdates.excerpt = excerpt;
 
@@ -98,7 +99,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
       ? site.acf_content_fields.split(",").map((f: string) => f.trim()).filter(Boolean)
       : [];
 
-    if (content && acfFields.length > 0) {
+    if (content && post.is_elementor && post.elementor_data) {
+      // Elementor-site: injecteer content terug in de text-editor widget JSON
+      const updatedData = injectMainContent(post.elementor_data as unknown[], content);
+      wpUpdates.meta = { _elementor_data: JSON.stringify(updatedData) };
+      // post_content wordt door Elementor genegeerd — niet meesturen
+    } else if (content && acfFields.length > 0) {
       // ACF-site: verdeel content over alle geconfigureerde WYSIWYG velden
       const chunks = splitHtmlByH2(content, acfFields.length);
       wpUpdates.acf = Object.fromEntries(
@@ -116,6 +122,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
   const dbUpdates: Record<string, unknown> = {};
   if (title) dbUpdates.title = title;
   if (content) dbUpdates.content = content;
+  if (content && post.is_elementor && post.elementor_data) {
+    dbUpdates.elementor_data = injectMainContent(post.elementor_data as unknown[], content);
+  }
   if (excerpt) dbUpdates.excerpt = excerpt;
   if (metaTitle) dbUpdates.meta_title = metaTitle;
   if (metaDescription) dbUpdates.meta_description = metaDescription;

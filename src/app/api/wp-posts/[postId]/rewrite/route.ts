@@ -18,6 +18,7 @@ interface SiteRecord {
   wp_base_url?: string;
   wp_username?: string;
   wp_app_password_encrypted?: string;
+  default_language?: string;
 }
 
 const HUMANIZER_MODE = (process.env.CONTENT_HUMANIZER_MODE || "auto").toLowerCase();
@@ -94,6 +95,29 @@ function extractYouTubeMarkers(html: string): string[] {
     markers.push(marker);
   }
   return markers;
+}
+
+// Detect dominant language from text using discriminating stopwords.
+// Returns a language name compatible with humanizeArticleDraft (e.g. "Dutch", "German").
+function detectPostLanguage(text: string, fallback: string): string {
+  const sample = stripTags(text).slice(0, 3000).toLowerCase();
+  const words = sample.match(/\b[\wäöüß]+\b/g) ?? [];
+
+  // Words that appear in German but NOT in Dutch
+  const germanMarkers = new Set(["und", "ich", "für", "durch", "auch", "sich", "nach", "beim", "wird", "wurde", "einen", "einer", "einem", "deutschen", "deutschen", "sowie", "dabei"]);
+  // Words that appear in Dutch but NOT in German
+  const dutchMarkers = new Set(["het", "een", "voor", "zijn", "maar", "omdat", "want", "dit", "deze", "jij", "wij", "jullie", "dus", "toch", "gewoon", "eigenlijk"]);
+
+  let germanScore = 0;
+  let dutchScore = 0;
+  for (const word of words) {
+    if (germanMarkers.has(word)) germanScore++;
+    if (dutchMarkers.has(word)) dutchScore++;
+  }
+
+  if (germanScore > dutchScore) return "German";
+  if (dutchScore > germanScore) return "Dutch";
+  return fallback;
 }
 
 function detectAiClicheHits(text: string): number {
@@ -350,7 +374,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pos
   if (post.site_id) {
     const { data: site } = await supabase
       .from("asc_sites")
-      .select("tone_of_voice, wp_base_url, wp_username, wp_app_password_encrypted")
+      .select("tone_of_voice, wp_base_url, wp_username, wp_app_password_encrypted, default_language")
       .eq("id", post.site_id)
       .eq("user_id", user.id)
       .single();
@@ -425,8 +449,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ pos
         const canonicalHtml = canonicalizeYouTubeMarkers(
           canonicalizeImageMarkers(rewrittenHtml)
         );
+        const detectedLanguage = detectPostLanguage(
+          `${post.title || ""} ${rewrittenHtml}`,
+          siteRecord?.default_language || "Dutch"
+        );
         const humanized = await humanizeArticleDraft({
-          language: "Dutch",
+          language: detectedLanguage,
           topic: focusKeyword || post.title || "Artikel",
           title: post.title || focusKeyword || "Artikel",
           targetKeywords: mergedKeywords,

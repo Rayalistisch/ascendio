@@ -201,7 +201,7 @@ export default function BillingSettingsPage() {
           </p>
 
           <div className="grid gap-4 sm:grid-cols-3">
-            {TIERS.map((tier) => {
+            {TIERS.filter((t) => t.showInPricing !== false).map((tier) => {
               const isCurrent = tier.id === normalizedTier;
               return (
                 <div

@@ -59,6 +59,8 @@ export async function POST(request: Request) {
     templateId,
     contentType,
     generationSettings,
+    ibvisionUrlPrefix,
+    language,
   } = body;
 
   if (!siteId || !name || !pillarTopic) {
@@ -82,6 +84,8 @@ export async function POST(request: Request) {
     pillar_keywords: pillarKeywords || [],
     template_id: templateId || null,
     content_type: contentType || "pages",
+    ibvision_url_prefix: ibvisionUrlPrefix || null,
+    language: language || null,
   };
   if (generationSettings !== undefined) {
     insertPayload.generation_settings = normalizeGenerationSettings(generationSettings);
@@ -124,6 +128,12 @@ export async function PATCH(request: Request) {
   }
   if (fields.pillarWpPostUrl !== undefined) {
     updates.pillar_wp_post_url = fields.pillarWpPostUrl ?? null;
+  }
+  if (fields.ibvisionUrlPrefix !== undefined) {
+    updates.ibvision_url_prefix = fields.ibvisionUrlPrefix || null;
+  }
+  if (fields.language !== undefined) {
+    updates.language = fields.language || null;
   }
   if (fields.contentType !== undefined) {
     // Block content type change if cluster already has published content

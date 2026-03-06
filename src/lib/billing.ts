@@ -1,4 +1,4 @@
-export type TierId = "starter" | "pro" | "business";
+export type TierId = "starter" | "pro" | "business" | "custom";
 export type BillingInterval = "monthly" | "yearly";
 
 const YEARLY_MONTHS_TOTAL = 12;
@@ -16,6 +16,7 @@ export interface TierDefinition {
   features: string[];
   stripePriceEnv: string; // Monthly Stripe price env
   stripePriceEnvYearly: string; // Yearly Stripe price env
+  showInPricing?: boolean; // false = not selectable by users
 }
 
 export const TIERS: TierDefinition[] = [
@@ -74,6 +75,23 @@ export const TIERS: TierDefinition[] = [
     stripePriceEnv: "STRIPE_PRICE_BUSINESS",
     stripePriceEnvYearly: "STRIPE_PRICE_BUSINESS_YEARLY",
   },
+  {
+    id: "custom",
+    name: "Aangepast abonnement",
+    priceLabel: "Op maat",
+    priceMonthly: 0,
+    priceYearly: 0,
+    description: "Maatwerkabonnement met afgesproken credits en toegang.",
+    includedCredits: 0,
+    features: [
+      "Alle functies inbegrepen",
+      "Afgesproken credits",
+      "Meerdere bedrijven",
+    ],
+    stripePriceEnv: "",
+    stripePriceEnvYearly: "",
+    showInPricing: false,
+  },
 ];
 
 // Feature gating per tier
@@ -83,6 +101,7 @@ const TIER_FEATURES: Record<TierId, GatedFeature[]> = {
   starter: [],
   pro: ["clusters", "social", "tone_of_voice"],
   business: ["clusters", "social", "tone_of_voice", "team"],
+  custom: ["clusters", "social", "tone_of_voice", "team"],
 };
 
 // Legacy tier names from before the rename (growth → pro, scale → business)

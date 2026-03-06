@@ -25,6 +25,7 @@ import {
   enqueueSocialPostJob,
   enqueueIndexingJob,
 } from "@/lib/qstash";
+import { publishContent as publishToIBVision } from "@/lib/ibvision";
 import { checkCredits, deductCredits, CREDIT_COSTS } from "@/lib/credits";
 import {
   stripHtmlToPlainText,
@@ -315,16 +316,19 @@ export async function POST(request: Request) {
 
     if (!site) throw new Error("Site niet gevonden");
 
-    const wpAppPassword = decrypt(site.wp_app_password_encrypted);
+    const platform = site.platform || "wordpress";
+    let language = site.default_language || "Dutch";
+
+    const wpAppPassword = platform === "wordpress" ? decrypt(site.wp_app_password_encrypted) : "";
     const creds = {
       baseUrl: site.wp_base_url,
       username: site.wp_username,
       appPassword: wpAppPassword,
     };
-    const language = site.default_language || "Dutch";
 
     await logStep(supabase, runId, "info", "Site-gegevens geladen", {
       site: site.name,
+      platform,
     });
 
     // 2. Load cached posts for internal linking (fast path)
@@ -346,8 +350,8 @@ export async function POST(request: Request) {
 
       await logStep(supabase, runId, "info", `${existingPosts.length} interne link-kandidaten uit cache geladen`);
 
-      // Bootstrap a small sync only when cache is too small.
-      if (existingPosts.length < MIN_CACHED_POSTS_FOR_LINKING) {
+      // Bootstrap a small sync only when cache is too small (WordPress only).
+      if (platform !== "ibvision" && existingPosts.length < MIN_CACHED_POSTS_FOR_LINKING) {
         await logStep(supabase, runId, "info", "Cache beperkt, beperkte WP sync uitvoeren...");
         const wpPosts = await fetchAllPosts(creds, {
           fields: ["id", "title", "slug", "link", "excerpt", "status", "date", "modified"],
@@ -498,6 +502,7 @@ export async function POST(request: Request) {
     let clusterContext = undefined;
     let forcedTopic = undefined;
     let forcedTitle = undefined;
+    let clusterIbvisionUrlPrefix: string | null = null;
     let targetKeywords: string[] | undefined;
     const payloadGenerationSettings: GenerationSettings | null = generationSettings
       ? normalizeGenerationSettings(generationSettings)
@@ -543,6 +548,8 @@ export async function POST(request: Request) {
         .single();
 
       if (cluster) {
+        clusterIbvisionUrlPrefix = cluster.ibvision_url_prefix ?? null;
+        if (cluster.language) language = cluster.language;
         if (!payloadGenerationSettings) {
           runGenerationSettings = normalizeGenerationSettings(
             cluster.generation_settings
@@ -633,7 +640,7 @@ export async function POST(request: Request) {
       sourceTitle,
       existingPosts,
       styleReferences,
-      siteBaseUrl: site.wp_base_url.replace(/\/+$/, ""),
+      siteBaseUrl: (site.wp_base_url || site.ibvision_base_url || "").replace(/\/+$/, ""),
       structureTemplate,
       clusterContext,
       preferredDomains: preferredDomains?.map((d) => ({ domain: d.domain, label: d.label })),
@@ -681,7 +688,7 @@ export async function POST(request: Request) {
           const map = await findExternalPlagiarismMatches([
             {
               id: 1,
-              pageUrl: site.wp_base_url,
+              pageUrl: site.wp_base_url || site.ibvision_base_url || "",
               title: article.title,
               textContent: plainText,
             },
@@ -826,7 +833,7 @@ export async function POST(request: Request) {
       runGenerationSettings.images.youtubeCount
     );
 
-    // 5. Generate featured image
+    // 5. Generate featured image (WordPress only — IBVision has no media upload API)
     const slug = article.title
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
@@ -834,7 +841,9 @@ export async function POST(request: Request) {
     const filename = `${slug}-featured.png`;
     let media: { id: number; url: string } | null = null;
 
-    if (featuredImageEnabled && hasTime(MIN_TIME_FOR_INLINE_IMAGES_MS)) {
+    if (platform === "ibvision") {
+      await logStep(supabase, runId, "info", "Afbeeldingen overgeslagen (IBVision heeft geen media upload)");
+    } else if (featuredImageEnabled && hasTime(MIN_TIME_FOR_INLINE_IMAGES_MS)) {
       try {
         await logStep(supabase, runId, "info", "Uitgelichte afbeelding genereren...");
         const [imageBuffer, featuredAltText] = await Promise.all([
@@ -874,11 +883,11 @@ export async function POST(request: Request) {
       await logStep(supabase, runId, "warn", "Uitgelichte afbeelding overgeslagen wegens tijdslimiet");
     }
 
-    // 6. Replace image markers with in-article images
+    // 6. Replace image markers with in-article images (WordPress only)
     let htmlContent = article.htmlContent;
     let imagesCount = media ? 1 : 0;
     const imageResults: Array<{ marker: string; html: string }> = [];
-    const markersToProcess = hasTime(MIN_TIME_FOR_INLINE_IMAGES_MS)
+    const markersToProcess = platform !== "ibvision" && hasTime(MIN_TIME_FOR_INLINE_IMAGES_MS)
       ? article.imageMarkers.slice(0, maxInlineImagesRequested)
       : [];
 
@@ -1029,11 +1038,43 @@ export async function POST(request: Request) {
       .eq("id", runId)
       .eq("user_id", userId);
 
-    // 10. Publish to WordPress (post or page depending on content type)
+    // 10. Publish content (IBVision or WordPress)
     const effectiveContentType = contentType || "posts";
-    let post: { id: number; url: string };
+    let post: { id: number | string; url: string };
 
-    if (effectiveContentType === "pages") {
+    if (platform === "ibvision") {
+      // IBVision publish
+      const ibCreds = {
+        baseUrl: site.ibvision_base_url!,
+        apiKey: decrypt(site.ibvision_api_key_encrypted!),
+        urlPrefix: clusterIbvisionUrlPrefix || site.ibvision_url_prefix || "/",
+      };
+      await logStep(supabase, runId, "info", "Content publiceren via IBVision...");
+      const ibResult = await publishToIBVision(ibCreds, {
+        title: article.title,
+        htmlContent,
+        language,
+        slug,
+      });
+      await logStep(supabase, runId, "info", "Gepubliceerd via IBVision", {
+        docid: ibResult.docid,
+        testUrl: ibResult.testUrl,
+      });
+      post = { id: ibResult.docid, url: ibResult.testUrl };
+
+      // Mark run as published
+      await supabase
+        .from("asc_runs")
+        .update({
+          status: "published",
+          wp_post_id: ibResult.docid,
+          wp_post_url: ibResult.testUrl,
+          finished_at: new Date().toISOString(),
+        })
+        .eq("id", runId)
+        .eq("user_id", userId);
+    } else if (effectiveContentType === "pages") {
+      // WordPress page publish
       let parentPageId: number | undefined;
 
       if (clusterTopicId && clusterId) {
@@ -1071,6 +1112,7 @@ export async function POST(request: Request) {
         parentId: parentPageId,
       });
     } else {
+      // WordPress post publish
       await logStep(supabase, runId, "info", "Post publiceren op WordPress...");
       post = await createPost(creds, {
         title: article.title,
@@ -1119,37 +1161,39 @@ export async function POST(request: Request) {
       }
     }
 
-    // 11. Cache the new post in asc_wp_posts
-    await supabase.from("asc_wp_posts").upsert(
-      {
-        user_id: userId,
-        site_id: siteId,
-        wp_post_id: post.id,
-        title: article.title,
-        slug,
-        url: post.url,
-        excerpt: article.metaDescription,
-        content: htmlContent,
-        meta_description: article.metaDescription,
-        schema_markup: article.schemaMarkup,
-        status: "publish",
-        last_synced_at: new Date().toISOString(),
-        wp_created_at: new Date().toISOString(),
-      },
-      { onConflict: "site_id,wp_post_id" }
-    );
+    if (platform !== "ibvision") {
+      // 11. Cache the new post in asc_wp_posts (WordPress only)
+      await supabase.from("asc_wp_posts").upsert(
+        {
+          user_id: userId,
+          site_id: siteId,
+          wp_post_id: post.id,
+          title: article.title,
+          slug,
+          url: post.url,
+          excerpt: article.metaDescription,
+          content: htmlContent,
+          meta_description: article.metaDescription,
+          schema_markup: article.schemaMarkup,
+          status: "publish",
+          last_synced_at: new Date().toISOString(),
+          wp_created_at: new Date().toISOString(),
+        },
+        { onConflict: "site_id,wp_post_id" }
+      );
 
-    // 12. Mark run as published
-    await supabase
-      .from("asc_runs")
-      .update({
-        status: "published",
-        wp_post_id: String(post.id),
-        wp_post_url: post.url,
-        finished_at: new Date().toISOString(),
-      })
-      .eq("id", runId)
-      .eq("user_id", userId);
+      // 12. Mark run as published (WordPress — IBVision already did this above)
+      await supabase
+        .from("asc_runs")
+        .update({
+          status: "published",
+          wp_post_id: String(post.id),
+          wp_post_url: post.url,
+          finished_at: new Date().toISOString(),
+        })
+        .eq("id", runId)
+        .eq("user_id", userId);
+    }
 
     // 12.5. Update cluster topic status if applicable
     if (clusterTopicId) {
@@ -1241,8 +1285,8 @@ export async function POST(request: Request) {
       }
     }
 
-    // 13. Auto-enqueue social media post if enabled
-    if (site.social_auto_post && site.social_webhook_url) {
+    // 13. Auto-enqueue social media post if enabled (WordPress only)
+    if (platform !== "ibvision" && site.social_auto_post && site.social_webhook_url) {
       try {
         const socialCopy = await generateSocialCopy(
           article.title,
@@ -1278,8 +1322,8 @@ export async function POST(request: Request) {
       }
     }
 
-    // 14. Auto-enqueue Google indexing if enabled
-    if (site.google_indexing_enabled) {
+    // 14. Auto-enqueue Google indexing if enabled (WordPress only)
+    if (platform !== "ibvision" && site.google_indexing_enabled) {
       try {
         const { data: indexReq } = await supabase
           .from("asc_indexing_requests")

@@ -63,7 +63,7 @@ export async function POST(request: Request) {
   // Load site base URL
   const { data: site } = await adminSupabase
     .from("asc_sites")
-    .select("wp_base_url")
+    .select("wp_base_url, platform, ibvision_base_url")
     .eq("id", siteId)
     .eq("user_id", user.id)
     .single();
@@ -71,7 +71,9 @@ export async function POST(request: Request) {
   if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 });
 
   // Fetch top-level sitemap
-  let entries = await fetchSitemap(site.wp_base_url);
+  let entries = site.platform === "ibvision"
+    ? await fetchSitemapFromUrl(`${site.ibvision_base_url!.replace(/\/+$/, "")}/sitemap.asp`)
+    : await fetchSitemap(site.wp_base_url);
 
   // If sitemap index found, fetch child sitemaps
   const indexEntries = entries.filter((e) => e.isIndex);
@@ -106,6 +108,25 @@ export async function POST(request: Request) {
 }
 
 // ── Helpers ──────────────────────────────────────────────────
+
+async function fetchSitemapFromUrl(url: string): Promise<SitemapEntry[]> {
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/xml, text/xml, */*" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const entries: SitemapEntry[] = [];
+    const matches = xml.matchAll(/<loc>([^<]+)<\/loc>/g);
+    for (const m of matches) {
+      entries.push({ url: m[1].trim() });
+    }
+    return entries;
+  } catch {
+    return [];
+  }
+}
 
 async function fetchChildSitemap(url: string): Promise<SitemapEntry[]> {
   const res = await fetch(url, {

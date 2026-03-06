@@ -14,12 +14,17 @@ export async function GET(request: Request) {
 
   const { data: site } = await supabase
     .from("asc_sites")
-    .select("wp_base_url, wp_username, wp_app_password_encrypted")
+    .select("platform, wp_base_url, wp_username, wp_app_password_encrypted")
     .eq("id", siteId)
     .eq("user_id", user.id)
     .single();
 
   if (!site) return NextResponse.json({ error: "Site niet gevonden" }, { status: 404 });
+
+  // IBVision sites have no WP pages API
+  if (site.platform === "ibvision") {
+    return NextResponse.json({ pages: [] });
+  }
 
   const creds = {
     baseUrl: site.wp_base_url,

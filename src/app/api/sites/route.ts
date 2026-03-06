@@ -9,7 +9,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("asc_sites")
-    .select("id, name, wp_base_url, wp_username, status, created_at, default_language, tone_of_voice")
+    .select("id, name, platform, wp_base_url, wp_username, ibvision_base_url, status, created_at, default_language, tone_of_voice")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -24,25 +24,45 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { name, wpBaseUrl, wpUsername, wpAppPassword } = body;
+  const {
+    name,
+    platform = "wordpress",
+    wpBaseUrl, wpUsername, wpAppPassword,
+    ibvisionBaseUrl, ibvisionApiKey, ibvisionUrlPrefix,
+  } = body;
 
-  if (!name || !wpBaseUrl || !wpUsername || !wpAppPassword) {
+  if (!name) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  const encryptedPassword = encrypt(wpAppPassword);
+  let insertData: Record<string, unknown> = { user_id: user.id, name, platform, status: "active" };
+
+  if (platform === "ibvision") {
+    if (!ibvisionBaseUrl || !ibvisionApiKey) {
+      return NextResponse.json({ error: "IBVision URL en API key zijn verplicht" }, { status: 400 });
+    }
+    insertData = {
+      ...insertData,
+      ibvision_base_url: ibvisionBaseUrl.replace(/\/+$/, ""),
+      ibvision_api_key_encrypted: encrypt(ibvisionApiKey),
+      ibvision_url_prefix: ibvisionUrlPrefix || "/",
+    };
+  } else {
+    if (!wpBaseUrl || !wpUsername || !wpAppPassword) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+    insertData = {
+      ...insertData,
+      wp_base_url: wpBaseUrl.replace(/\/+$/, ""),
+      wp_username: wpUsername,
+      wp_app_password_encrypted: encrypt(wpAppPassword),
+    };
+  }
 
   const { data, error } = await supabase
     .from("asc_sites")
-    .insert({
-      user_id: user.id,
-      name,
-      wp_base_url: wpBaseUrl.replace(/\/+$/, ""),
-      wp_username: wpUsername,
-      wp_app_password_encrypted: encryptedPassword,
-      status: "active",
-    })
-    .select("id, name, wp_base_url, wp_username, status, created_at")
+    .insert(insertData)
+    .select("id, name, platform, wp_base_url, wp_username, ibvision_base_url, status, created_at")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

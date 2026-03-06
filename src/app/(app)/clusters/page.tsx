@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,6 +32,7 @@ import {
 interface Site {
   id: string;
   name: string;
+  platform?: string;
 }
 
 interface Template {
@@ -51,6 +53,8 @@ interface Cluster {
   content_type: string;
   template_id: string | null;
   generation_settings: GenerationSettings | null;
+  ibvision_url_prefix: string | null;
+  language: string | null;
   topic_count: number;
   published_count: number;
   created_at: string;
@@ -179,9 +183,13 @@ const FORMATTING_TOGGLES: Array<{
 ];
 
 export default function ClustersPage() {
+  const searchParams = useSearchParams();
+  const urlSiteId = searchParams.get("siteId") || "";
   const [sites, setSites] = useState<Site[]>([]);
   const [siteId, setSiteId] = useState("");
   const [templates, setTemplates] = useState<Template[]>([]);
+  const activeSitePlatform = sites.find((s) => s.id === siteId)?.platform ?? "wordpress";
+  const isIBVision = activeSitePlatform === "ibvision";
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [loading, setLoading] = useState(true);
   const [templateSavingClusterId, setTemplateSavingClusterId] = useState<string | null>(null);
@@ -203,6 +211,8 @@ export default function ClustersPage() {
   const [newDescription, setNewDescription] = useState("");
   const [newKeywords, setNewKeywords] = useState<string[]>([]);
   const [newTemplateId, setNewTemplateId] = useState("");
+  const [newIbvisionUrlPrefix, setNewIbvisionUrlPrefix] = useState("");
+  const [newLanguage, setNewLanguage] = useState("");
   const [creating, setCreating] = useState(false);
 
   // Add topic
@@ -230,6 +240,8 @@ export default function ClustersPage() {
   const [editClusterPillar, setEditClusterPillar] = useState("");
   const [editClusterDescription, setEditClusterDescription] = useState("");
   const [editClusterKeywords, setEditClusterKeywords] = useState<string[]>([]);
+  const [editClusterIbvisionUrlPrefix, setEditClusterIbvisionUrlPrefix] = useState("");
+  const [editClusterLanguage, setEditClusterLanguage] = useState("");
   const [savingCluster, setSavingCluster] = useState(false);
 
   // Topic editing
@@ -259,8 +271,14 @@ export default function ClustersPage() {
       .then((d) => {
         const list = d.sites ?? [];
         setSites(list);
-        if (list.length > 0) setSiteId(list[0].id);
+        if (list.length > 0) {
+          const preferred = urlSiteId && list.some((s: Site) => s.id === urlSiteId)
+            ? urlSiteId
+            : list[0].id;
+          setSiteId(preferred);
+        }
       });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchClusters = useCallback(async (silent = false) => {
@@ -389,6 +407,8 @@ export default function ClustersPage() {
       setEditClusterPillar(c.pillar_topic);
       setEditClusterDescription(c.pillar_description ?? "");
       setEditClusterKeywords(c.pillar_keywords ?? []);
+      setEditClusterIbvisionUrlPrefix(c.ibvision_url_prefix ?? "");
+      setEditClusterLanguage(c.language ?? "");
     }
     await fetchTopics(clusterId);
 
@@ -489,6 +509,8 @@ export default function ClustersPage() {
           pillarKeywords: newKeywords,
           templateId: newTemplateId || undefined,
           contentType: newContentType,
+          ibvisionUrlPrefix: newIbvisionUrlPrefix || undefined,
+          language: newLanguage || undefined,
         }),
       });
       if (res.ok) {
@@ -499,6 +521,8 @@ export default function ClustersPage() {
         setNewKeywords([]);
         setNewTemplateId("");
         setNewContentType("pages");
+        setNewIbvisionUrlPrefix("");
+        setNewLanguage("");
         fetchClusters();
       }
     } finally {
@@ -732,6 +756,8 @@ export default function ClustersPage() {
           pillarTopic: editClusterPillar,
           pillarDescription: editClusterDescription || null,
           pillarKeywords: editClusterKeywords,
+          ibvisionUrlPrefix: editClusterIbvisionUrlPrefix || null,
+          language: editClusterLanguage || null,
         }),
       });
       if (res.ok) {
@@ -744,6 +770,8 @@ export default function ClustersPage() {
                   pillar_topic: editClusterPillar,
                   pillar_description: editClusterDescription || null,
                   pillar_keywords: editClusterKeywords,
+                  ibvision_url_prefix: editClusterIbvisionUrlPrefix || null,
+                  language: editClusterLanguage || null,
                 }
               : c
           )
@@ -860,20 +888,44 @@ export default function ClustersPage() {
                     </p>
                   )}
                 </div>
+                {!isIBVision && (
+                  <div className="space-y-2">
+                    <Label>Publicatietype</Label>
+                    <NativeSelect
+                      value={newContentType}
+                      onChange={(e) => setNewContentType(e.target.value)}
+                    >
+                      <option value="pages">Pagina&apos;s (hiërarchisch)</option>
+                      <option value="posts">Blogposts (standaard)</option>
+                    </NativeSelect>
+                    <p className="text-xs text-muted-foreground">
+                      {newContentType === "pages"
+                        ? "Pillar wordt een hoofdpagina, subtopics worden kindpagina's (bijv. /pillar/subtopic)."
+                        : "Alle artikelen worden als losse blogposts gepubliceerd."}
+                    </p>
+                  </div>
+                )}
+                {isIBVision && (
+                  <div className="space-y-2">
+                    <Label>URL prefix <span className="text-muted-foreground font-normal">(optioneel)</span></Label>
+                    <Input
+                      value={newIbvisionUrlPrefix}
+                      onChange={(e) => setNewIbvisionUrlPrefix(e.target.value)}
+                      placeholder="/elektra/"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Artikelen in dit cluster worden gepubliceerd op bijv. <code>/elektra/artikel-titel</code>. Leeg laat de site-instelling gebruiken.
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-2">
-                  <Label>Publicatietype</Label>
-                  <NativeSelect
-                    value={newContentType}
-                    onChange={(e) => setNewContentType(e.target.value)}
-                  >
-                    <option value="pages">Pagina&apos;s (hiërarchisch)</option>
-                    <option value="posts">Blogposts (standaard)</option>
+                  <Label>Taal <span className="text-muted-foreground font-normal">(optioneel)</span></Label>
+                  <NativeSelect value={newLanguage} onChange={(e) => setNewLanguage(e.target.value)}>
+                    <option value="">Site-standaard</option>
+                    <option value="Dutch">Nederlands (NL)</option>
+                    <option value="English">Engels (EN)</option>
+                    <option value="German">Duits (DE)</option>
                   </NativeSelect>
-                  <p className="text-xs text-muted-foreground">
-                    {newContentType === "pages"
-                      ? "Pillar wordt een hoofdpagina, subtopics worden kindpagina's (bijv. /pillar/subtopic)."
-                      : "Alle artikelen worden als losse blogposts gepubliceerd."}
-                  </p>
                 </div>
                 <Button onClick={createCluster} disabled={creating || !newName.trim() || !newPillar.trim()} className="w-full">
                   {creating ? "Aanmaken..." : "Cluster aanmaken"}
@@ -1377,6 +1429,33 @@ export default function ClustersPage() {
                         <div className="space-y-1.5">
                           <Label className="text-xs">Pillar zoekwoorden</Label>
                           <KeywordInput keywords={editClusterKeywords} onChange={setEditClusterKeywords} />
+                        </div>
+                        {isIBVision && (
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">URL prefix <span className="text-muted-foreground font-normal">(optioneel)</span></Label>
+                            <Input
+                              value={editClusterIbvisionUrlPrefix}
+                              onChange={(e) => setEditClusterIbvisionUrlPrefix(e.target.value)}
+                              placeholder="/elektra/"
+                              className="h-8 text-sm"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Bijv. <code>/elektra/</code> → artikelen komen op <code>/elektra/artikel-titel</code>
+                            </p>
+                          </div>
+                        )}
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Taal <span className="text-muted-foreground font-normal">(optioneel)</span></Label>
+                          <NativeSelect
+                            value={editClusterLanguage}
+                            onChange={(e) => setEditClusterLanguage(e.target.value)}
+                            className="w-full sm:w-48"
+                          >
+                            <option value="">Site-standaard</option>
+                            <option value="Dutch">Nederlands (NL)</option>
+                            <option value="English">Engels (EN)</option>
+                            <option value="German">Duits (DE)</option>
+                          </NativeSelect>
                         </div>
                       </div>
 

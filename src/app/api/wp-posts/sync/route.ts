@@ -33,10 +33,14 @@ function extractMainContent(elements: unknown[]): string {
 export function injectMainContent(elements: unknown[], newHtml: string): unknown[] {
   const cloned = JSON.parse(JSON.stringify(elements)) as ElementorElement[];
   const widgets = collectTextWidgets(cloned);
+  console.log(`[elementor] injectMainContent: found ${widgets.length} text-editor widget(s)`);
   if (widgets.length === 0) return cloned;
   const best = widgets.reduce((a, b) =>
     String(b.settings?.editor ?? "").length > String(a.settings?.editor ?? "").length ? b : a
   );
+  const oldContent = String(best.settings?.editor ?? "");
+  console.log(`[elementor] replacing widget (${oldContent.length} chars): "${oldContent.slice(0, 80)}..."`);
+  console.log(`[elementor] with new content (${newHtml.length} chars): "${newHtml.slice(0, 80)}..."`);
   if (best.settings) best.settings.editor = newHtml;
   return cloned;
 }

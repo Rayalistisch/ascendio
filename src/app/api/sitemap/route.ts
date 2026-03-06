@@ -60,25 +60,48 @@ export async function POST(request: Request) {
 
   const adminSupabase = createAdminClient();
 
-  // Load site base URL
-  const { data: site } = await adminSupabase
-    .from("asc_sites")
-    .select("wp_base_url, platform, ibvision_base_url, sitemap_url")
-    .eq("id", siteId)
-    .eq("user_id", user.id)
-    .single();
+  // Load site — try with sitemap_url first, fall back if column doesn't exist yet
+  let site: { wp_base_url: string; platform: string; ibvision_base_url: string | null; sitemap_url?: string | null } | null = null;
+  {
+    const { data, error } = await adminSupabase
+      .from("asc_sites")
+      .select("wp_base_url, platform, ibvision_base_url, sitemap_url")
+      .eq("id", siteId)
+      .eq("user_id", user.id)
+      .single();
+    if (data) {
+      site = data;
+    } else if (error?.message?.includes("sitemap_url")) {
+      // Migration not yet run — fetch without that column
+      const { data: fallback } = await adminSupabase
+        .from("asc_sites")
+        .select("wp_base_url, platform, ibvision_base_url")
+        .eq("id", siteId)
+        .eq("user_id", user.id)
+        .single();
+      site = fallback ?? null;
+    }
+  }
 
   if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 });
 
   // Fetch sitemap — use custom sitemap_url if configured, else auto-detect
+  const customUrl = site.sitemap_url ?? null;
   let entries: SitemapEntry[];
-  if (site.sitemap_url) {
-    entries = await fetchChildSitemap(site.sitemap_url);
+  let fetchedFrom: string;
+
+  if (customUrl) {
+    fetchedFrom = customUrl;
+    entries = await fetchChildSitemap(customUrl);
   } else if (site.platform === "ibvision") {
-    entries = await fetchSitemapFromUrl(`${site.ibvision_base_url!.replace(/\/+$/, "")}/sitemap.asp`);
+    fetchedFrom = `${site.ibvision_base_url!.replace(/\/+$/, "")}/sitemap.asp`;
+    entries = await fetchSitemapFromUrl(fetchedFrom);
   } else {
+    fetchedFrom = `${site.wp_base_url}/sitemap.xml (auto)`;
     entries = await fetchSitemap(site.wp_base_url);
   }
+
+  console.log(`[sitemap] fetched from: ${fetchedFrom}, entries: ${entries.length}, isIndex: ${entries.filter(e => e.isIndex).length}`);
 
   // If sitemap index found, fetch child sitemaps
   const indexEntries = entries.filter((e) => e.isIndex);
@@ -90,8 +113,8 @@ export async function POST(request: Request) {
     for (const result of childResults) {
       if (result.status === "fulfilled") childEntries.push(...result.value);
     }
-    // Replace index entries with actual URLs
     entries = childEntries;
+    console.log(`[sitemap] after child fetch: ${entries.length} total entries`);
   }
 
   // Upsert into cache
@@ -104,12 +127,18 @@ export async function POST(request: Request) {
       scraped_at: new Date().toISOString(),
     }));
 
-    await adminSupabase
+    const { error: upsertError } = await adminSupabase
       .from("asc_sitemap_urls")
       .upsert(rows, { onConflict: "site_id,url" });
+
+    if (upsertError) console.error("[sitemap] upsert error:", upsertError.message);
   }
 
-  return NextResponse.json({ count: entries.length });
+  const message = entries.length === 0
+    ? `Geen URL's gevonden via ${customUrl ?? site.wp_base_url}. Controleer of de sitemap URL bereikbaar is en of de migratie (migrations_v14) is uitgevoerd.`
+    : undefined;
+
+  return NextResponse.json({ count: entries.length, ...(message ? { message } : {}) });
 }
 
 // ── Helpers ──────────────────────────────────────────────────

@@ -264,6 +264,7 @@ export default function ClustersPage() {
   const [sitemapLoading, setSitemapLoading] = useState(false);
   const [sitemapScanning, setSitemapScanning] = useState(false);
   const [sitemapCount, setSitemapCount] = useState<number | null>(null);
+  const [sitemapScanMessage, setSitemapScanMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/sites")
@@ -729,6 +730,7 @@ export default function ClustersPage() {
   async function scanSitemap() {
     if (!siteId) return;
     setSitemapScanning(true);
+    setSitemapScanMessage(null);
     try {
       const res = await fetch("/api/sitemap", {
         method: "POST",
@@ -738,7 +740,13 @@ export default function ClustersPage() {
       if (res.ok) {
         const data = await res.json();
         setSitemapCount(data.count ?? 0);
+        if (data.message) setSitemapScanMessage(data.message);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setSitemapScanMessage(err.error ?? `Scan mislukt (HTTP ${res.status})`);
       }
+    } catch {
+      setSitemapScanMessage("Netwerk fout bij het scannen van de sitemap.");
     } finally {
       setSitemapScanning(false);
     }
@@ -843,6 +851,9 @@ export default function ClustersPage() {
                 ? `Sitemap (${sitemapCount} URL's)`
                 : "Sitemap scannen"}
           </Button>
+          {sitemapScanMessage && (
+            <p className="text-xs text-amber-600 max-w-xs">{sitemapScanMessage}</p>
+          )}
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-xs hover:bg-primary/90">
               Cluster aanmaken

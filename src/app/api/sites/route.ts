@@ -9,7 +9,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("asc_sites")
-    .select("id, name, platform, wp_base_url, wp_username, ibvision_base_url, status, created_at, default_language, tone_of_voice, acf_content_fields")
+    .select("id, name, platform, wp_base_url, wp_username, ibvision_base_url, status, created_at, default_language, tone_of_voice, acf_content_fields, sitemap_url")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -76,7 +76,7 @@ export async function PATCH(request: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { id, toneOfVoice, acfContentFields } = body;
+  const { id, toneOfVoice, acfContentFields, sitemapUrl } = body;
   if (!id) return NextResponse.json({ error: "Missing site id" }, { status: 400 });
 
   if (toneOfVoice !== undefined && toneOfVoice !== null && typeof toneOfVoice !== "object") {
@@ -86,13 +86,14 @@ export async function PATCH(request: Request) {
   const updates: Record<string, unknown> = {};
   if (toneOfVoice !== undefined) updates.tone_of_voice = toneOfVoice ?? null;
   if (acfContentFields !== undefined) updates.acf_content_fields = acfContentFields || null;
+  if (sitemapUrl !== undefined) updates.sitemap_url = sitemapUrl || null;
 
   const { data, error } = await supabase
     .from("asc_sites")
     .update(updates)
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("id, name, wp_base_url, wp_username, status, created_at, default_language, tone_of_voice, acf_content_fields")
+    .select("id, name, wp_base_url, wp_username, status, created_at, default_language, tone_of_voice, acf_content_fields, sitemap_url")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

@@ -4,6 +4,49 @@ import { updatePost } from "@/lib/wordpress";
 import { decrypt } from "@/lib/encryption";
 import { normalizeGenerationSettings } from "@/lib/generation-settings";
 
+/**
+ * Split HTML content across `count` buckets by H2 section boundaries.
+ * Each H2 tag and everything up to the next H2 (or end) is one "section".
+ * Sections are distributed as evenly as possible by character count.
+ */
+function splitHtmlByH2(html: string, count: number): string[] {
+  if (count <= 1) return [html];
+
+  // Split on H2 opening tags, keeping the delimiter
+  const parts = html.split(/(?=<h2[\s>])/i);
+
+  // If no H2 found or only one chunk, distribute by character midpoints
+  if (parts.length <= 1) {
+    const mid = Math.floor(html.length / count);
+    const chunks: string[] = [];
+    let offset = 0;
+    for (let i = 0; i < count; i++) {
+      const end = i < count - 1 ? offset + mid : html.length;
+      chunks.push(html.slice(offset, end));
+      offset = end;
+    }
+    return chunks;
+  }
+
+  // Distribute sections into buckets evenly by total character length
+  const totalLen = html.length;
+  const targetLen = totalLen / count;
+  const buckets: string[][] = Array.from({ length: count }, () => []);
+  let bucket = 0;
+  let bucketLen = 0;
+
+  for (const part of parts) {
+    if (bucket < count - 1 && bucketLen + part.length > targetLen * (bucket + 1)) {
+      bucket++;
+      bucketLen = 0;
+    }
+    buckets[bucket].push(part);
+    bucketLen += part.length;
+  }
+
+  return buckets.map((b) => b.join(""));
+}
+
 export async function GET(request: Request, { params }: { params: Promise<{ postId: string }> }) {
   const { postId } = await params;
   const supabase = await createClient();
@@ -56,8 +99,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
       : [];
 
     if (content && acfFields.length > 0) {
-      // ACF-site: schrijf content naar het eerste geconfigureerde WYSIWYG veld
-      wpUpdates.acf = { [acfFields[0]]: content };
+      // ACF-site: verdeel content over alle geconfigureerde WYSIWYG velden
+      const chunks = splitHtmlByH2(content, acfFields.length);
+      wpUpdates.acf = Object.fromEntries(
+        acfFields.map((field: string, i: number) => [field, chunks[i] ?? ""])
+      );
     } else if (content) {
       wpUpdates.content = content;
     }

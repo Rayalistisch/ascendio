@@ -463,20 +463,34 @@ export interface SitemapEntry {
   isIndex?: boolean;
 }
 
+function extractLocFromBlock(block: string): { url: string; lastmod?: string } | null {
+  const locMatch = block.match(/<loc>\s*([^<\s][^<]*?)\s*<\/loc>/i);
+  if (!locMatch) return null;
+  const url = locMatch[1].trim();
+  if (!url) return null;
+  const lastmodMatch = block.match(/<lastmod>\s*([^<]+?)\s*<\/lastmod>/i);
+  return { url, lastmod: lastmodMatch?.[1].trim() };
+}
+
 function parseSitemapXml(xml: string): SitemapEntry[] {
   const entries: SitemapEntry[] = [];
 
-  // Check for sitemap index (<sitemap><loc>...</loc></sitemap>)
-  const indexMatches = xml.matchAll(/<sitemap>\s*<loc>([^<]+)<\/loc>(?:\s*<lastmod>([^<]+)<\/lastmod>)?/g);
-  for (const m of indexMatches) {
-    entries.push({ url: m[1].trim(), lastmod: m[2]?.trim(), isIndex: true });
+  // Check for sitemap index — detect <sitemapindex> or individual <sitemap> blocks
+  const isIndex = /<sitemapindex[\s>]/i.test(xml) || /<sitemap>/.test(xml);
+  if (isIndex) {
+    const blocks = xml.match(/<sitemap>[\s\S]*?<\/sitemap>/gi) ?? [];
+    for (const block of blocks) {
+      const parsed = extractLocFromBlock(block);
+      if (parsed?.url) entries.push({ url: parsed.url, lastmod: parsed.lastmod, isIndex: true });
+    }
+    if (entries.length > 0) return entries;
   }
-  if (entries.length > 0) return entries;
 
-  // Parse regular <url> entries
-  const urlMatches = xml.matchAll(/<url>\s*<loc>([^<]+)<\/loc>(?:\s*<lastmod>([^<]+)<\/lastmod>)?/g);
-  for (const m of urlMatches) {
-    entries.push({ url: m[1].trim(), lastmod: m[2]?.trim() });
+  // Parse regular <url> entries — extract <loc> from each <url> block
+  const urlBlocks = xml.match(/<url>[\s\S]*?<\/url>/gi) ?? [];
+  for (const block of urlBlocks) {
+    const parsed = extractLocFromBlock(block);
+    if (parsed?.url) entries.push({ url: parsed.url, lastmod: parsed.lastmod });
   }
   return entries;
 }

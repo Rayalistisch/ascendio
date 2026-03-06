@@ -63,23 +63,28 @@ export async function POST(request: Request) {
   // Load site base URL
   const { data: site } = await adminSupabase
     .from("asc_sites")
-    .select("wp_base_url, platform, ibvision_base_url")
+    .select("wp_base_url, platform, ibvision_base_url, sitemap_url")
     .eq("id", siteId)
     .eq("user_id", user.id)
     .single();
 
   if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 });
 
-  // Fetch top-level sitemap
-  let entries = site.platform === "ibvision"
-    ? await fetchSitemapFromUrl(`${site.ibvision_base_url!.replace(/\/+$/, "")}/sitemap.asp`)
-    : await fetchSitemap(site.wp_base_url);
+  // Fetch sitemap — use custom sitemap_url if configured, else auto-detect
+  let entries: SitemapEntry[];
+  if (site.sitemap_url) {
+    entries = await fetchChildSitemap(site.sitemap_url);
+  } else if (site.platform === "ibvision") {
+    entries = await fetchSitemapFromUrl(`${site.ibvision_base_url!.replace(/\/+$/, "")}/sitemap.asp`);
+  } else {
+    entries = await fetchSitemap(site.wp_base_url);
+  }
 
   // If sitemap index found, fetch child sitemaps
   const indexEntries = entries.filter((e) => e.isIndex);
   if (indexEntries.length > 0) {
     const childResults = await Promise.allSettled(
-      indexEntries.slice(0, 10).map((entry) => fetchChildSitemap(entry.url))
+      indexEntries.slice(0, 15).map((entry) => fetchChildSitemap(entry.url))
     );
     const childEntries: SitemapEntry[] = [];
     for (const result of childResults) {
@@ -129,19 +134,25 @@ async function fetchSitemapFromUrl(url: string): Promise<SitemapEntry[]> {
 }
 
 async function fetchChildSitemap(url: string): Promise<SitemapEntry[]> {
-  const res = await fetch(url, {
-    headers: { Accept: "application/xml, text/xml" },
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) return [];
-  const xml = await res.text();
-  // Re-use same parsing — child sitemaps contain <url> entries
-  const entries: SitemapEntry[] = [];
-  const matches = xml.matchAll(/<url>\s*<loc>([^<]+)<\/loc>(?:\s*<lastmod>([^<]+)<\/lastmod>)?/g);
-  for (const m of matches) {
-    entries.push({ url: m[1].trim(), lastmod: m[2]?.trim() });
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/xml, text/xml, */*", "User-Agent": "Mozilla/5.0 (compatible; AscendioBot/1.0)" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) return [];
+    const xml = await res.text();
+    // Extract <loc> from each <url> block — robust against any element ordering inside <url>
+    const entries: SitemapEntry[] = [];
+    const urlBlocks = xml.match(/<url>[\s\S]*?<\/url>/gi) ?? [];
+    for (const block of urlBlocks) {
+      const locMatch = block.match(/<loc>\s*([^<\s][^<]*?)\s*<\/loc>/i);
+      const lastmodMatch = block.match(/<lastmod>\s*([^<]+?)\s*<\/lastmod>/i);
+      if (locMatch?.[1]) entries.push({ url: locMatch[1].trim(), lastmod: lastmodMatch?.[1].trim() });
+    }
+    return entries;
+  } catch {
+    return [];
   }
-  return entries;
 }
 
 function buildSearchTerms(

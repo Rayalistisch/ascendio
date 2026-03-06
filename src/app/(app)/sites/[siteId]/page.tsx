@@ -27,6 +27,7 @@ interface SiteInfo {
   default_language: string;
   tone_of_voice: ToneOfVoice | null;
   acf_content_fields: string | null;
+  sitemap_url: string | null;
 }
 
 interface PreferredDomain {
@@ -65,6 +66,11 @@ export default function SiteDetailPage() {
   const [savingAcf, setSavingAcf] = useState(false);
   const [acfSaved, setAcfSaved] = useState(false);
 
+  // Sitemap
+  const [sitemapUrl, setSitemapUrl] = useState("");
+  const [savingSitemap, setSavingSitemap] = useState(false);
+  const [sitemapSaved, setSitemapSaved] = useState(false);
+
   // Tone of voice
   const [tone, setTone] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
@@ -84,6 +90,7 @@ export default function SiteDetailPage() {
         const found = (data.sites ?? []).find((s: SiteInfo) => s.id === siteId);
         setSite(found || null);
         if (found?.acf_content_fields) setAcfContentFields(found.acf_content_fields);
+        if (found?.sitemap_url) setSitemapUrl(found.sitemap_url);
         if (found?.tone_of_voice) {
           const tov = found.tone_of_voice;
           setTone(tov.tone || "");
@@ -200,6 +207,24 @@ export default function SiteDetailPage() {
       }
     } finally {
       setSavingAcf(false);
+    }
+  }
+
+  async function saveSitemapUrl() {
+    setSavingSitemap(true);
+    setSitemapSaved(false);
+    try {
+      const res = await fetch("/api/sites", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: siteId, sitemapUrl: sitemapUrl.trim() || null }),
+      });
+      if (res.ok) {
+        setSitemapSaved(true);
+        setTimeout(() => setSitemapSaved(false), 3000);
+      }
+    } finally {
+      setSavingSitemap(false);
     }
   }
 
@@ -379,6 +404,31 @@ export default function SiteDetailPage() {
             {savingAcf ? "Opslaan..." : "ACF velden opslaan"}
           </Button>
           {acfSaved && <span className="text-sm text-green-600">Opgeslagen!</span>}
+        </div>
+      </div>
+
+      {/* Sitemap URL */}
+      <div className="rounded-xl border bg-card p-4 space-y-3">
+        <div>
+          <h2 className="font-semibold">Sitemap URL</h2>
+          <p className="text-sm text-muted-foreground">
+            Laat leeg om de sitemap automatisch te detecteren. Vul een specifieke URL in als je site een afwijkende sitemap-structuur heeft, bijv. <code className="text-xs bg-muted px-1 rounded">https://jouwsite.nl/post-sitemap.xml</code>.
+          </p>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Sitemap URL (optioneel)</Label>
+          <Input
+            value={sitemapUrl}
+            onChange={(e) => setSitemapUrl(e.target.value)}
+            placeholder="https://jouwsite.nl/post-sitemap.xml"
+            type="url"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Button onClick={saveSitemapUrl} disabled={savingSitemap} size="sm">
+            {savingSitemap ? "Opslaan..." : "Sitemap URL opslaan"}
+          </Button>
+          {sitemapSaved && <span className="text-sm text-green-600">Opgeslagen!</span>}
         </div>
       </div>
 

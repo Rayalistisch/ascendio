@@ -110,8 +110,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
       console.log(`[publish] elementorData source: ${liveElementorData ? (post.elementor_data ? "db-fallback or live" : "live") : "NONE"}, widgets: ${liveElementorData ? "checking..." : "N/A"}`);
       if (liveElementorData) {
         const updatedData = injectMainContent(liveElementorData, content);
-        wpUpdates.meta = { _elementor_data: JSON.stringify(updatedData) };
-        console.log(`[publish] → sending via meta._elementor_data (${JSON.stringify(updatedData).length} chars)`);
+        wpUpdates.meta = {
+          _elementor_data: JSON.stringify(updatedData),
+          // Leeg de CSS-cache zodat Elementor op de volgende pageload regenereert
+          _elementor_css: "",
+        };
+        console.log(`[publish] → sending via meta._elementor_data (${JSON.stringify(updatedData).length} chars) + clearing _elementor_css cache`);
         // post_content wordt door Elementor genegeerd — NIET meesturen
       } else {
         // Geen Elementor-data beschikbaar (API exposeert het niet) — fallback naar post_content

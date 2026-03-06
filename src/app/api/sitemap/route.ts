@@ -182,9 +182,10 @@ async function fetchChildSitemap(url: string): Promise<SitemapEntry[]> {
     }
     const entries: SitemapEntry[] = [];
     for (const block of urlBlocks) {
-      const locMatch = block.match(/<loc>\s*([^<\s][^<]*?)\s*<\/loc>/i);
-      const lastmodMatch = block.match(/<lastmod>\s*([^<]+?)\s*<\/lastmod>/i);
-      if (locMatch?.[1]) entries.push({ url: locMatch[1].trim(), lastmod: lastmodMatch?.[1].trim() });
+      // Handle both plain <loc>URL</loc> and CDATA-wrapped <loc><![CDATA[URL]]></loc> (e.g. AIOSEO Pro)
+      const locMatch = block.match(/<loc>(?:<!\[CDATA\[)?\s*([^\]<][^<\]]*?)\s*(?:\]\]>)?<\/loc>/i);
+      const lastmodMatch = block.match(/<lastmod>(?:<!\[CDATA\[)?\s*([^\]<][^<\]]*?)\s*(?:\]\]>)?<\/lastmod>/i);
+      if (locMatch?.[1]) entries.push({ url: locMatch[1].trim(), lastmod: lastmodMatch?.[1]?.trim() });
     }
     return entries;
   } catch (err) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { NativeSelect } from "@/components/ui/select";
@@ -44,6 +45,8 @@ function formatDate(d: string | null) {
 }
 
 export default function SocialPage() {
+  const searchParams = useSearchParams();
+  const urlSiteId = searchParams.get("siteId") || "";
   const [sites, setSites] = useState<Site[]>([]);
   const [siteId, setSiteId] = useState("");
   const [posts, setPosts] = useState<SocialPost[]>([]);
@@ -61,8 +64,12 @@ export default function SocialPage() {
       .then((d) => {
         const list = d.sites ?? [];
         setSites(list);
-        if (list.length > 0) setSiteId(list[0].id);
+        if (list.length > 0) {
+          const preferred = urlSiteId && list.some((s: Site) => s.id === urlSiteId) ? urlSiteId : list[0].id;
+          setSiteId(preferred);
+        }
       });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchPosts = useCallback(async () => {

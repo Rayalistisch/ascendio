@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { NativeSelect } from "@/components/ui/select";
@@ -37,6 +37,8 @@ function formatDate(d: string | null) {
 
 export default function ScannerPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlSiteId = searchParams.get("siteId") || "";
   const [sites, setSites] = useState<Site[]>([]);
   const [siteId, setSiteId] = useState("");
   const [reports, setReports] = useState<ScanReport[]>([]);
@@ -51,8 +53,12 @@ export default function ScannerPage() {
       .then((d) => {
         const list = d.sites ?? [];
         setSites(list);
-        if (list.length > 0) setSiteId(list[0].id);
+        if (list.length > 0) {
+          const preferred = urlSiteId && list.some((s: Site) => s.id === urlSiteId) ? urlSiteId : list[0].id;
+          setSiteId(preferred);
+        }
       });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchReports = useCallback(async (options?: { silent?: boolean }) => {

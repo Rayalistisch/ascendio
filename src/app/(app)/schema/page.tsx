@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/select";
@@ -78,6 +79,8 @@ function toPathLabel(url: string, fallbackSlug: string): string {
 }
 
 export default function SchemaPage() {
+  const searchParams = useSearchParams();
+  const urlSiteId = searchParams.get("siteId") || "";
   const [sites, setSites] = useState<Site[]>([]);
   const [siteId, setSiteId] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -101,12 +104,14 @@ export default function SchemaPage() {
         const list = data.sites ?? [];
         setSites(list);
         if (list.length > 0) {
-          setSiteId(list[0].id);
+          const preferred = urlSiteId && list.some((s: Site) => s.id === urlSiteId) ? urlSiteId : list[0].id;
+          setSiteId(preferred);
         }
       })
       .catch(() => {
         setError("Kon sites niet laden.");
       });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchAudit = useCallback(async () => {

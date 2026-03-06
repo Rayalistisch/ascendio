@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,8 @@ function formatDate(d: string | null) {
 
 export default function SeoEditorPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlSiteId = searchParams.get("siteId") || "";
   const [sites, setSites] = useState<Site[]>([]);
   const [siteId, setSiteId] = useState("");
   const [posts, setPosts] = useState<WpPost[]>([]);
@@ -43,8 +45,12 @@ export default function SeoEditorPage() {
       .then((d) => {
         const list = d.sites ?? [];
         setSites(list);
-        if (list.length > 0) setSiteId(list[0].id);
+        if (list.length > 0) {
+          const preferred = urlSiteId && list.some((s: Site) => s.id === urlSiteId) ? urlSiteId : list[0].id;
+          setSiteId(preferred);
+        }
       });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchPosts = useCallback(async () => {

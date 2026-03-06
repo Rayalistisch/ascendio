@@ -47,10 +47,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
       username: site.wp_username,
       appPassword: decrypt(site.wp_app_password_encrypted),
     };
-    const wpUpdates: Record<string, string> = {};
+    const wpUpdates: Record<string, unknown> = {};
     if (title) wpUpdates.title = title;
     if (content) wpUpdates.content = content;
     if (excerpt) wpUpdates.excerpt = excerpt;
+    // Elementor bypassen: als _elementor_edit_mode "builder" is negeert
+    // Elementor de post_content. Door het te legen valt WP terug op post_content.
+    if (content) wpUpdates.meta = { _elementor_edit_mode: "" };
     if (Object.keys(wpUpdates).length > 0) {
       await updatePost(creds, post.wp_post_id, wpUpdates);
     }

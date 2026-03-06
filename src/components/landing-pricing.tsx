@@ -101,7 +101,7 @@ export function LandingPricing({ headingClassName = "" }: LandingPricingProps) {
 
         {/* Cards */}
         <div className="mt-10 grid gap-5 md:grid-cols-3">
-          {TIERS.map((tier, index) => {
+          {TIERS.filter((t) => t.showInPricing !== false).map((tier, index) => {
             const theme = cardThemes[index];
             const price = billingInterval === "yearly" ? tier.priceYearly : tier.priceMonthly;
             const unit = billingInterval === "yearly" ? "/ jaar" : "/ maand";

@@ -55,10 +55,20 @@ export async function POST(request: Request) {
           ? (wp.excerpt?.rendered || wp.excerpt?.raw || "")
           : String(wp.excerpt || "");
 
-      const content =
-        typeof wp.content === "object"
+      // ACF: als de site acf_content_fields heeft geconfigureerd,
+      // lees content uit die ACF WYSIWYG velden i.p.v. post_content.
+      const acfFields = site.acf_content_fields
+        ? site.acf_content_fields.split(",").map((f: string) => f.trim()).filter(Boolean)
+        : [];
+      const acfData = wp.acf && typeof wp.acf === "object" ? wp.acf as Record<string, unknown> : {};
+      const acfContent = acfFields.length > 0
+        ? acfFields.map((f: string) => (typeof acfData[f] === "string" ? acfData[f] as string : "")).filter(Boolean).join("\n\n")
+        : "";
+
+      const content = acfContent ||
+        (typeof wp.content === "object"
           ? (wp.content?.rendered || wp.content?.raw || "")
-          : String(wp.content || "");
+          : String(wp.content || ""));
 
       const featuredImageUrl =
         wp.featured_media_url || wp._embedded?.["wp:featuredmedia"]?.[0]?.source_url || null;

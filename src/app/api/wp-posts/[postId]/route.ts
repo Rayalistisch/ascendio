@@ -32,7 +32,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
 
   const { data: post } = await supabase
     .from("asc_wp_posts")
-    .select("*, asc_sites(wp_base_url, wp_username, wp_app_password_encrypted)")
+    .select("*, asc_sites(wp_base_url, wp_username, wp_app_password_encrypted, acf_content_fields)")
     .eq("id", postId)
     .eq("user_id", user.id)
     .single();
@@ -47,10 +47,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
       username: site.wp_username,
       appPassword: decrypt(site.wp_app_password_encrypted),
     };
-    const wpUpdates: Record<string, string> = {};
+    const wpUpdates: { title?: string; content?: string; excerpt?: string; acf?: Record<string, string> } = {};
     if (title) wpUpdates.title = title;
-    if (content) wpUpdates.content = content;
     if (excerpt) wpUpdates.excerpt = excerpt;
+
+    const acfFields = site.acf_content_fields
+      ? site.acf_content_fields.split(",").map((f: string) => f.trim()).filter(Boolean)
+      : [];
+
+    if (content && acfFields.length > 0) {
+      // ACF-site: schrijf content naar het eerste geconfigureerde WYSIWYG veld
+      wpUpdates.acf = { [acfFields[0]]: content };
+    } else if (content) {
+      wpUpdates.content = content;
+    }
+
     if (Object.keys(wpUpdates).length > 0) {
       await updatePost(creds, post.wp_post_id, wpUpdates);
     }

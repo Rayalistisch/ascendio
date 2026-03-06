@@ -166,7 +166,7 @@ async function fetchAllFromCollection(
   options?: { perPage?: number; fields?: string[]; maxPages?: number; timeoutMs?: number }
 ): Promise<Array<Record<string, any>>> {
   const perPage = options?.perPage || 100;
-  const fields = options?.fields?.join(',') || 'id,type,title,slug,link,content,excerpt,featured_media,meta,status,date,modified';
+  const fields = options?.fields?.join(',') || 'id,type,title,slug,link,content,excerpt,featured_media,meta,acf,status,date,modified';
   const maxPages = options?.maxPages;
   let page = 1;
   const allRows: Array<Record<string, any>> = [];
@@ -353,6 +353,7 @@ export async function updatePost(
     content?: string;
     excerpt?: string;
     meta?: Record<string, string>;
+    acf?: Record<string, string>;
     status?: string;
   },
   options?: { collection?: WPCollection }

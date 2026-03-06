@@ -26,6 +26,7 @@ interface SiteInfo {
   status: string;
   default_language: string;
   tone_of_voice: ToneOfVoice | null;
+  acf_content_fields: string | null;
 }
 
 interface PreferredDomain {
@@ -59,6 +60,11 @@ export default function SiteDetailPage() {
   // Templates
   const [templates, setTemplates] = useState<ArticleTemplate[]>([]);
 
+  // ACF
+  const [acfContentFields, setAcfContentFields] = useState("");
+  const [savingAcf, setSavingAcf] = useState(false);
+  const [acfSaved, setAcfSaved] = useState(false);
+
   // Tone of voice
   const [tone, setTone] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
@@ -77,6 +83,7 @@ export default function SiteDetailPage() {
         const data = await res.json();
         const found = (data.sites ?? []).find((s: SiteInfo) => s.id === siteId);
         setSite(found || null);
+        if (found?.acf_content_fields) setAcfContentFields(found.acf_content_fields);
         if (found?.tone_of_voice) {
           const tov = found.tone_of_voice;
           setTone(tov.tone || "");
@@ -175,6 +182,24 @@ export default function SiteDetailPage() {
       setAnalyzeError("Er ging iets mis bij de analyse");
     } finally {
       setAnalyzingStyle(false);
+    }
+  }
+
+  async function saveAcfFields() {
+    setSavingAcf(true);
+    setAcfSaved(false);
+    try {
+      const res = await fetch("/api/sites", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: siteId, acfContentFields: acfContentFields.trim() || null }),
+      });
+      if (res.ok) {
+        setAcfSaved(true);
+        setTimeout(() => setAcfSaved(false), 3000);
+      }
+    } finally {
+      setSavingAcf(false);
     }
   }
 
@@ -330,6 +355,30 @@ export default function SiteDetailPage() {
           <Button onClick={addDomain} disabled={addingDomain || !newDomain.trim()} size="sm">
             <Plus className="h-4 w-4 mr-1" /> Toevoegen
           </Button>
+        </div>
+      </div>
+
+      {/* ACF content velden */}
+      <div className="rounded-xl border bg-card p-4 space-y-3">
+        <div>
+          <h2 className="font-semibold">ACF content velden</h2>
+          <p className="text-sm text-muted-foreground">
+            Gebruikt deze site Advanced Custom Fields (ACF) voor de hoofdtekst? Vul hier de veldnamen in (kommagescheiden). Ascendio leest en schrijft dan via die velden i.p.v. de standaard WordPress content.
+          </p>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">ACF veldnamen (kommagescheiden)</Label>
+          <Input
+            value={acfContentFields}
+            onChange={(e) => setAcfContentFields(e.target.value)}
+            placeholder="bijv. solution_inner_info, solution_inner_info1"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Button onClick={saveAcfFields} disabled={savingAcf} size="sm">
+            {savingAcf ? "Opslaan..." : "ACF velden opslaan"}
+          </Button>
+          {acfSaved && <span className="text-sm text-green-600">Opgeslagen!</span>}
         </div>
       </div>
 

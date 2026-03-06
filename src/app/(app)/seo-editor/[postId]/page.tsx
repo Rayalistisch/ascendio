@@ -130,7 +130,9 @@ export default function SeoEditorPostPage() {
   // AI tools
   const [rewritePrompt, setRewritePrompt] = useState("");
   const [rewriting, setRewriting] = useState(false);
+  const [rewriteError, setRewriteError] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [keywords, setKeywords] = useState<string[]>([]);
   const [showPreview, setShowPreview] = useState(true);
@@ -269,6 +271,7 @@ export default function SeoEditorPostPage() {
 
   async function analyzeSeo() {
     setAnalyzing(true);
+    setAnalyzeError(null);
     try {
       const mergedKeywords = Array.from(
         new Set(
@@ -294,7 +297,12 @@ export default function SeoEditorPostPage() {
           suggestions: data.suggestions ?? [],
         });
         window.dispatchEvent(new Event("credits-updated"));
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setAnalyzeError(data.error || "Analyse mislukt");
       }
+    } catch {
+      setAnalyzeError("Analyse mislukt. Probeer het opnieuw.");
     } finally {
       setAnalyzing(false);
     }
@@ -363,6 +371,9 @@ export default function SeoEditorPostPage() {
           <SeoScoreBadge score={post.seo_score} details={seoDetails} />
         </div>
         <div className="flex items-center gap-2">
+          {analyzeError && (
+            <span className="text-xs text-destructive max-w-[200px] text-right">{analyzeError}</span>
+          )}
           <Button variant="outline" onClick={analyzeSeo} disabled={analyzing}>
             {analyzing ? "Analyseren..." : "SEO Analyseren"}
           </Button>

@@ -168,18 +168,24 @@ async function fetchChildSitemap(url: string): Promise<SitemapEntry[]> {
       headers: { Accept: "application/xml, text/xml, */*", "User-Agent": "Mozilla/5.0 (compatible; AscendioBot/1.0)" },
       signal: AbortSignal.timeout(20_000),
     });
-    if (!res.ok) return [];
+    console.log(`[sitemap] fetchChildSitemap ${url} → HTTP ${res.status} ${res.headers.get("content-type") ?? ""}`);
+    if (!res.ok) {
+      console.error(`[sitemap] fetchChildSitemap non-OK: ${res.status}`);
+      return [];
+    }
     const xml = await res.text();
-    // Extract <loc> from each <url> block — robust against any element ordering inside <url>
-    const entries: SitemapEntry[] = [];
+    console.log(`[sitemap] xml length: ${xml.length}, first 200: ${xml.slice(0, 200).replace(/\n/g, " ")}`);
     const urlBlocks = xml.match(/<url>[\s\S]*?<\/url>/gi) ?? [];
+    console.log(`[sitemap] urlBlocks found: ${urlBlocks.length}`);
+    const entries: SitemapEntry[] = [];
     for (const block of urlBlocks) {
       const locMatch = block.match(/<loc>\s*([^<\s][^<]*?)\s*<\/loc>/i);
       const lastmodMatch = block.match(/<lastmod>\s*([^<]+?)\s*<\/lastmod>/i);
       if (locMatch?.[1]) entries.push({ url: locMatch[1].trim(), lastmod: lastmodMatch?.[1].trim() });
     }
     return entries;
-  } catch {
+  } catch (err) {
+    console.error(`[sitemap] fetchChildSitemap error for ${url}:`, err instanceof Error ? err.message : String(err));
     return [];
   }
 }

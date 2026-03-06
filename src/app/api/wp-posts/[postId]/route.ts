@@ -100,19 +100,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
       : [];
 
     const isElementor = site.is_elementor_site || post.is_elementor;
+    console.log(`[publish] post ${post.wp_post_id} — isElementor: ${isElementor} (site_toggle: ${site.is_elementor_site}, post_flag: ${post.is_elementor})`);
 
     if (content && isElementor) {
       // Elementor-site: haal altijd de verse _elementor_data op van WP zodat we nooit
       // verouderde of ontbrekende data gebruiken, en injecteer de content in de text widget.
       const liveElementorData = await fetchPostElementorData(creds, post.wp_post_id)
         ?? (post.elementor_data as unknown[] | null);
+      console.log(`[publish] elementorData source: ${liveElementorData ? (post.elementor_data ? "db-fallback or live" : "live") : "NONE"}, widgets: ${liveElementorData ? "checking..." : "N/A"}`);
       if (liveElementorData) {
         const updatedData = injectMainContent(liveElementorData, content);
         wpUpdates.meta = { _elementor_data: JSON.stringify(updatedData) };
+        console.log(`[publish] → sending via meta._elementor_data (${JSON.stringify(updatedData).length} chars)`);
         // post_content wordt door Elementor genegeerd — NIET meesturen
       } else {
         // Geen Elementor-data beschikbaar (API exposeert het niet) — fallback naar post_content
-        console.warn(`[publish] Elementor site but no _elementor_data found for post ${post.wp_post_id}, falling back to post_content`);
+        console.warn(`[publish] FALLBACK post_content — _elementor_data niet beschikbaar voor post ${post.wp_post_id}`);
         wpUpdates.content = content;
       }
     } else if (content && acfFields.length > 0) {

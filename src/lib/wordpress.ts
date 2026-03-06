@@ -344,24 +344,44 @@ export async function deletePost(
   }
 }
 
-// Fetch raw _elementor_data for a specific post (returns parsed JSON array or null)
+// Fetch raw _elementor_data for a specific post (returns parsed JSON array or null).
+// Uses context=edit so WordPress exposes protected meta fields.
+// Falls back to the pages endpoint if the posts endpoint returns 404.
 export async function fetchPostElementorData(
   creds: WPCredentials,
   postId: number,
   options?: { collection?: WPCollection }
 ): Promise<unknown[] | null> {
-  const collection = options?.collection || "posts";
-  try {
-    const res = await fetch(
-      wpApiUrl(creds, `/${collection}/${postId}?_fields=meta`),
-      { headers: { Authorization: authHeader(creds) }, signal: AbortSignal.timeout(10_000) }
-    );
+  const tryFetch = async (collection: string): Promise<unknown[] | null> => {
+    // context=edit is required for WordPress to expose protected meta like _elementor_data
+    const url = wpApiUrl(creds, `/${collection}/${postId}?context=edit&_fields=id,meta`);
+    const res = await fetch(url, {
+      headers: { Authorization: authHeader(creds) },
+      signal: AbortSignal.timeout(10_000),
+    });
+    console.log(`[elementor] fetchPostElementorData ${collection}/${postId} → HTTP ${res.status}`);
     if (!res.ok) return null;
     const data = await res.json();
     const raw = data.meta?._elementor_data;
+    console.log(`[elementor] _elementor_data present: ${!!raw}, length: ${typeof raw === "string" ? raw.length : 0}`);
     if (!raw || typeof raw !== "string" || raw.length < 3) return null;
-    return JSON.parse(raw) as unknown[];
-  } catch {
+    try {
+      return JSON.parse(raw) as unknown[];
+    } catch {
+      console.error(`[elementor] JSON.parse failed for post ${postId}`);
+      return null;
+    }
+  };
+
+  const collection = options?.collection || "posts";
+  try {
+    const result = await tryFetch(collection);
+    if (result) return result;
+    // Fallback: try the other collection (pages)
+    if (collection === "posts") return await tryFetch("pages");
+    return null;
+  } catch (err) {
+    console.error(`[elementor] fetchPostElementorData error:`, err instanceof Error ? err.message : String(err));
     return null;
   }
 }

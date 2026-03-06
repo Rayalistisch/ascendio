@@ -51,13 +51,13 @@ export async function POST(request: Request) {
           : String(wp.title || "");
 
       const excerpt =
-        typeof wp.excerpt === "object" && wp.excerpt?.rendered
-          ? wp.excerpt.rendered
+        typeof wp.excerpt === "object"
+          ? (wp.excerpt?.rendered || wp.excerpt?.raw || "")
           : String(wp.excerpt || "");
 
       const content =
-        typeof wp.content === "object" && wp.content?.rendered
-          ? wp.content.rendered
+        typeof wp.content === "object"
+          ? (wp.content?.rendered || wp.content?.raw || "")
           : String(wp.content || "");
 
       const featuredImageUrl =

@@ -387,6 +387,9 @@ export async function fetchPostElementorData(
     } else {
       return null;
     }
+    // Lege array = Elementor heeft de meta aangemaakt maar er is geen echte content.
+    // Dit is geen Elementor-pagina — val terug op post_content.
+    if (parsed.length === 0) return null;
     return { data: parsed, pageTemplate };
   };
 

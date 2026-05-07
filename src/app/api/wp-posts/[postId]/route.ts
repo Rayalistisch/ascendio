@@ -117,7 +117,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
         const updatedData = injectMainContent(liveElementorData, content);
         const metaUpdates: Record<string, string> = {
           _elementor_data: JSON.stringify(updatedData),
-          _elementor_edit_mode: "builder",
         };
         // Bewaar de paginatemplate (bijv. "elementor_full_width") zodat WordPress
         // die niet terugzet naar de standaard template na de update.

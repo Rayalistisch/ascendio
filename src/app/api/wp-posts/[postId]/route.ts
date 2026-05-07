@@ -132,6 +132,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
           });
           wpPublishPath = "elementor";
           console.log(`[publish] ✓ Elementor meta + template (${liveElementorMeta?.pageTemplate}) + post_content bijgewerkt`);
+          // CSS-cache leegmaken als aparte call — mag falen zonder de update te breken.
+          // Elementor slaat gegenereerde CSS op in _elementor_css; als die niet geleegd
+          // wordt na een _elementor_data wijziging, laadt de browser verouderde stijlen.
+          updatePost(creds, post.wp_post_id, { meta: { _elementor_css: "" } }).catch((cssErr) => {
+            console.warn(`[publish] _elementor_css clear overgeslagen: ${cssErr instanceof Error ? cssErr.message : cssErr}`);
+          });
         } catch (metaErr) {
           console.warn(`[publish] meta-write mislukt (${metaErr instanceof Error ? metaErr.message : metaErr}), fallback naar post_content`);
           await updatePost(creds, post.wp_post_id, { title: wpUpdates.title, content });

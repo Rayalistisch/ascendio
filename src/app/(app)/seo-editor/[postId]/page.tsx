@@ -126,6 +126,8 @@ export default function SeoEditorPostPage() {
   const [metaTitle, setMetaTitle] = useState("");
   const [metaDescription, setMetaDescription] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   // AI tools
   const [rewritePrompt, setRewritePrompt] = useState("");
@@ -177,6 +179,8 @@ export default function SeoEditorPostPage() {
 
   async function savePost() {
     setSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
     try {
       const res = await fetch(`/api/wp-posts/${postId}`, {
         method: "PATCH",
@@ -192,7 +196,14 @@ export default function SeoEditorPostPage() {
             generation_settings: normalizeGenerationSettings(updated.generation_settings),
           });
         }
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setSaveError(data.error || `WordPress gaf een fout terug (${res.status})`);
       }
+    } catch {
+      setSaveError("Verbindingsfout — controleer je internetverbinding.");
     } finally {
       setSaving(false);
     }
@@ -373,6 +384,12 @@ export default function SeoEditorPostPage() {
         <div className="flex items-center gap-2">
           {analyzeError && (
             <span className="text-xs text-destructive max-w-[200px] text-right">{analyzeError}</span>
+          )}
+          {saveError && (
+            <span className="text-xs text-destructive max-w-[240px] text-right">{saveError}</span>
+          )}
+          {saveSuccess && (
+            <span className="text-xs text-green-600 font-medium">Opgeslagen</span>
           )}
           <Button variant="outline" onClick={analyzeSeo} disabled={analyzing}>
             {analyzing ? "Analyseren..." : "SEO Analyseren"}

@@ -113,14 +113,24 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
 
       if (useElementorPath && liveElementorData) {
         const updatedData = injectMainContent(liveElementorData, content);
-        wpUpdates.meta = {
-          _elementor_data: JSON.stringify(updatedData),
-          // Zorgt dat Elementor altijd uit _elementor_data rendert, niet uit post_content.
-          _elementor_edit_mode: "builder",
-        };
-        // post_content triggert wp_update_post() zodat caching-plugins hun cache invalideren.
-        wpUpdates.content = content;
-        console.log(`[publish] → Elementor path: meta._elementor_data (${JSON.stringify(updatedData).length} chars) + post_content cache-bust`);
+        // Elementor-meta apart proberen: sommige WP-installaties staan geen meta-write
+        // toe via REST. Als het faalt, valt de update terug op post_content.
+        try {
+          await updatePost(creds, post.wp_post_id, {
+            title: wpUpdates.title,
+            content,
+            meta: {
+              _elementor_data: JSON.stringify(updatedData),
+              _elementor_edit_mode: "builder",
+            },
+          });
+          console.log(`[publish] ✓ Elementor meta + post_content bijgewerkt`);
+        } catch (metaErr) {
+          console.warn(`[publish] meta-write mislukt (${metaErr instanceof Error ? metaErr.message : metaErr}), fallback naar post_content`);
+          await updatePost(creds, post.wp_post_id, { title: wpUpdates.title, content });
+        }
+        // Niet nogmaals via wpUpdates sturen — WP-update is al gedaan
+        Object.keys(wpUpdates).forEach((k) => delete (wpUpdates as Record<string, unknown>)[k]);
       } else if (acfFields.length > 0) {
         // ACF-site: verdeel content over alle geconfigureerde WYSIWYG velden
         const chunks = splitHtmlByH2(content, acfFields.length);
@@ -134,19 +144,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
 
     if (Object.keys(wpUpdates).length > 0) {
       await updatePost(creds, post.wp_post_id, wpUpdates);
-
-      // Verificatie: haal _elementor_data opnieuw op en controleer of onze wijziging erin zit
-      if (isElementor && content) {
-        const verifyData = await fetchPostElementorData(creds, post.wp_post_id);
-        if (verifyData) {
-          const verifyJson = JSON.stringify(verifyData);
-          const firstH2 = content.match(/<h2[^>]*>(.*?)<\/h2>/i)?.[1] ?? content.slice(0, 40);
-          const found = verifyJson.includes(firstH2.slice(0, 20));
-          console.log(`[verify] _elementor_data na update: ${verifyJson.length} chars, bevat nieuwe H2 "${firstH2.slice(0, 30)}": ${found}`);
-        } else {
-          console.warn(`[verify] kon _elementor_data niet ophalen na update`);
-        }
-      }
     }
   }
 

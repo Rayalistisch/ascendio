@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { updatePost, fetchPostElementorData } from "@/lib/wordpress";
 import { decrypt } from "@/lib/encryption";
 import { normalizeGenerationSettings } from "@/lib/generation-settings";
-import { injectMainContent } from "@/app/api/wp-posts/sync/route";
+import { injectMainContent, buildDefaultElementorData } from "@/app/api/wp-posts/sync/route";
 
 /**
  * Split HTML content across `count` buckets by H2 section boundaries.
@@ -87,6 +87,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
   const site = Array.isArray(post.asc_sites) ? post.asc_sites[0] : post.asc_sites as any;
   let wpPublishPath: "elementor" | "elementor_fallback" | "acf" | "post_content" | "none" = "none";
   let elementorDataFound = false;
+  let wpCollection: "posts" | "pages" = "posts";
 
   if (site) {
     const creds = {
@@ -107,39 +108,54 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
 
     if (content) {
       const liveElementorMeta = await fetchPostElementorData(creds, post.wp_post_id);
-      const liveElementorData = liveElementorMeta?.data
-        ?? (post.elementor_data as unknown[] | null);
-      elementorDataFound = liveElementorData !== null;
+      const rawElementorData = liveElementorMeta?.data ?? (post.elementor_data as unknown[] | null);
+      elementorDataFound = rawElementorData !== null;
+      // Voor nieuwe berichten op een Elementor-site: bouw een minimale structuur
+      // zodat de content direct via Elementor gepubliceerd wordt.
+      const liveElementorData = rawElementorData ?? (isElementor ? buildDefaultElementorData(content) : null);
       const useElementorPath = isElementor || elementorDataFound;
-      console.log(`[publish] liveElementorData: ${elementorDataFound ? "found" : "null"}, template: ${liveElementorMeta?.pageTemplate ?? "unknown"}, useElementorPath: ${useElementorPath}`);
+      wpCollection = liveElementorMeta?.collection ?? "posts";
+      console.log(`[publish] liveElementorData: ${elementorDataFound ? "found" : "null"}, isNew: ${!elementorDataFound && isElementor}, template: ${liveElementorMeta?.pageTemplate ?? "unknown"}, collection: ${wpCollection}, useElementorPath: ${useElementorPath}`);
 
       if (useElementorPath && liveElementorData) {
-        const updatedData = injectMainContent(liveElementorData, content);
+        const updatedData = elementorDataFound
+          ? injectMainContent(liveElementorData, content)
+          : liveElementorData; // nieuw bericht: content zit al in de default structuur
         const metaUpdates: Record<string, string> = {
           _elementor_data: JSON.stringify(updatedData),
+          _elementor_edit_mode: "builder",
         };
-        // Bewaar de paginatemplate (bijv. "elementor_full_width") zodat WordPress
-        // die niet terugzet naar de standaard template na de update.
-        if (liveElementorMeta?.pageTemplate) {
-          metaUpdates._wp_page_template = liveElementorMeta.pageTemplate;
-        }
+        // Voor nieuwe berichten: zet Elementor full width template.
+        // Voor bestaande: bewaar de huidige template.
+        metaUpdates._wp_page_template = liveElementorMeta?.pageTemplate ?? "elementor_full_width";
         try {
           await updatePost(creds, post.wp_post_id, {
             title: wpUpdates.title,
             content,
             meta: metaUpdates,
-          });
+          }, { collection: wpCollection });
           wpPublishPath = "elementor";
-          console.log(`[publish] ✓ Elementor meta + template (${liveElementorMeta?.pageTemplate}) + post_content bijgewerkt`);
+          console.log(`[publish] ✓ Elementor meta + template (${liveElementorMeta?.pageTemplate}) via ${wpCollection} bijgewerkt`);
           // CSS-cache leegmaken als aparte call — mag falen zonder de update te breken.
           // Elementor slaat gegenereerde CSS op in _elementor_css; als die niet geleegd
           // wordt na een _elementor_data wijziging, laadt de browser verouderde stijlen.
-          updatePost(creds, post.wp_post_id, { meta: { _elementor_css: "" } }).catch((cssErr) => {
+          updatePost(creds, post.wp_post_id, { meta: { _elementor_css: "" } }, { collection: wpCollection }).catch((cssErr) => {
             console.warn(`[publish] _elementor_css clear overgeslagen: ${cssErr instanceof Error ? cssErr.message : cssErr}`);
+          });
+          // Purge page cache (WP Fastest Cache en andere plugins via mu-plugin endpoint).
+          // Mag falen — de content-update zelf is al geslaagd.
+          const purgeUrl = `${creds.baseUrl.replace(/\/+$/, "")}/wp-json/ascendio/v1/purge-post/${post.wp_post_id}`;
+          fetch(purgeUrl, {
+            method: "POST",
+            headers: { Authorization: `Basic ${Buffer.from(`${creds.username}:${creds.appPassword}`).toString("base64")}` },
+          }).then((r) => {
+            console.log(`[publish] cache purge → HTTP ${r.status}`);
+          }).catch((purgeErr) => {
+            console.warn(`[publish] cache purge overgeslagen: ${purgeErr instanceof Error ? purgeErr.message : purgeErr}`);
           });
         } catch (metaErr) {
           console.warn(`[publish] meta-write mislukt (${metaErr instanceof Error ? metaErr.message : metaErr}), fallback naar post_content`);
-          await updatePost(creds, post.wp_post_id, { title: wpUpdates.title, content });
+          await updatePost(creds, post.wp_post_id, { title: wpUpdates.title, content }, { collection: wpCollection });
           wpPublishPath = "elementor_fallback";
         }
         Object.keys(wpUpdates).forEach((k) => delete (wpUpdates as Record<string, unknown>)[k]);
@@ -185,5 +201,5 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ post: updated, _debug: { wpPublishPath, elementorDataFound } });
+  return NextResponse.json({ post: updated, _debug: { wpPublishPath, elementorDataFound, wpCollection } });
 }

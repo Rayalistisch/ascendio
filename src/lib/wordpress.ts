@@ -350,6 +350,7 @@ export async function deletePost(
 export type ElementorMeta = {
   data: unknown[];
   pageTemplate: string | null;
+  collection: WPCollection;
 };
 
 export async function fetchPostElementorData(
@@ -357,7 +358,7 @@ export async function fetchPostElementorData(
   postId: number,
   options?: { collection?: WPCollection }
 ): Promise<ElementorMeta | null> {
-  const tryFetch = async (collection: string): Promise<ElementorMeta | null> => {
+  const tryFetch = async (collection: WPCollection): Promise<ElementorMeta | null> => {
     const url = wpApiUrl(creds, `/${collection}/${postId}?context=edit&_fields=id,meta`);
     const res = await fetch(url, {
       headers: { Authorization: authHeader(creds) },
@@ -390,14 +391,14 @@ export async function fetchPostElementorData(
     // Lege array = Elementor heeft de meta aangemaakt maar er is geen echte content.
     // Dit is geen Elementor-pagina — val terug op post_content.
     if (parsed.length === 0) return null;
-    return { data: parsed, pageTemplate };
+    return { data: parsed, pageTemplate, collection };
   };
 
-  const collection = options?.collection || "posts";
+  const startCollection = options?.collection || "posts";
   try {
-    const result = await tryFetch(collection);
+    const result = await tryFetch(startCollection);
     if (result) return result;
-    if (collection === "posts") return await tryFetch("pages");
+    if (startCollection === "posts") return await tryFetch("pages");
     return null;
   } catch (err) {
     console.error(`[elementor] fetchPostElementorData error:`, err instanceof Error ? err.message : String(err));

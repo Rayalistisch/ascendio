@@ -59,6 +59,34 @@ function extractMainContent(elements: unknown[]): string {
   return getWidgetContent(best);
 }
 
+export function buildDefaultElementorData(htmlContent: string): unknown[] {
+  const uid = () => Math.random().toString(36).slice(2, 9);
+  return [
+    {
+      id: uid(),
+      elType: "section",
+      settings: {},
+      isInner: false,
+      elements: [
+        {
+          id: uid(),
+          elType: "column",
+          settings: { _column_size: 100, _inline_size: null },
+          elements: [
+            {
+              id: uid(),
+              elType: "widget",
+              widgetType: "text-editor",
+              settings: { editor: htmlContent },
+              elements: [],
+            },
+          ],
+        },
+      ],
+    },
+  ];
+}
+
 export function injectMainContent(elements: unknown[], newHtml: string): unknown[] {
   const cloned = JSON.parse(JSON.stringify(elements)) as ElementorElement[];
   const widgets = collectTextWidgets(cloned);

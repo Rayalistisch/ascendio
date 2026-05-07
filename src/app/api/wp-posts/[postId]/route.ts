@@ -85,6 +85,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const site = Array.isArray(post.asc_sites) ? post.asc_sites[0] : post.asc_sites as any;
+  let wpPublishPath: "elementor" | "elementor_fallback" | "acf" | "post_content" | "none" = "none";
+  let elementorDataFound = false;
+
   if (site) {
     const creds = {
       baseUrl: site.wp_base_url,
@@ -103,18 +106,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
     console.log(`[publish] post ${post.wp_post_id} — isElementor: ${isElementor} (site_toggle: ${site.is_elementor_site}, post_flag: ${post.is_elementor})`);
 
     if (content) {
-      // Haal altijd live _elementor_data op — ook als is_elementor false is.
-      // De sync detecteert Elementor niet altijd correct (mist context=edit),
-      // dus vertrouwen we hier op de live data als leidend signaal.
       const liveElementorData = await fetchPostElementorData(creds, post.wp_post_id)
         ?? (post.elementor_data as unknown[] | null);
-      const useElementorPath = isElementor || liveElementorData !== null;
-      console.log(`[publish] liveElementorData: ${liveElementorData ? "found" : "null"}, useElementorPath: ${useElementorPath}`);
+      elementorDataFound = liveElementorData !== null;
+      const useElementorPath = isElementor || elementorDataFound;
+      console.log(`[publish] liveElementorData: ${elementorDataFound ? "found" : "null"}, useElementorPath: ${useElementorPath}`);
 
       if (useElementorPath && liveElementorData) {
         const updatedData = injectMainContent(liveElementorData, content);
-        // Elementor-meta apart proberen: sommige WP-installaties staan geen meta-write
-        // toe via REST. Als het faalt, valt de update terug op post_content.
         try {
           await updatePost(creds, post.wp_post_id, {
             title: wpUpdates.title,
@@ -124,21 +123,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
               _elementor_edit_mode: "builder",
             },
           });
+          wpPublishPath = "elementor";
           console.log(`[publish] ✓ Elementor meta + post_content bijgewerkt`);
         } catch (metaErr) {
           console.warn(`[publish] meta-write mislukt (${metaErr instanceof Error ? metaErr.message : metaErr}), fallback naar post_content`);
           await updatePost(creds, post.wp_post_id, { title: wpUpdates.title, content });
+          wpPublishPath = "elementor_fallback";
         }
-        // Niet nogmaals via wpUpdates sturen — WP-update is al gedaan
         Object.keys(wpUpdates).forEach((k) => delete (wpUpdates as Record<string, unknown>)[k]);
       } else if (acfFields.length > 0) {
-        // ACF-site: verdeel content over alle geconfigureerde WYSIWYG velden
         const chunks = splitHtmlByH2(content, acfFields.length);
         wpUpdates.acf = Object.fromEntries(
           acfFields.map((field: string, i: number) => [field, chunks[i] ?? ""])
         );
+        wpPublishPath = "acf";
       } else {
         wpUpdates.content = content;
+        wpPublishPath = "post_content";
       }
     }
 
@@ -168,5 +169,5 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ post: updated });
+  return NextResponse.json({ post: updated, _debug: { wpPublishPath, elementorDataFound } });
 }

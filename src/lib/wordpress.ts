@@ -363,8 +363,12 @@ export async function fetchPostElementorData(
     if (!res.ok) return null;
     const data = await res.json();
     const raw = data.meta?._elementor_data;
-    console.log(`[elementor] _elementor_data present: ${!!raw}, length: ${typeof raw === "string" ? raw.length : 0}`);
-    if (!raw || typeof raw !== "string" || raw.length < 3) return null;
+    console.log(`[elementor] _elementor_data type: ${typeof raw}, length: ${typeof raw === "string" ? raw.length : Array.isArray(raw) ? raw.length : "N/A"}`);
+    if (!raw) return null;
+    // WordPress kan _elementor_data als al-geparsed array teruggeven (nieuwere Elementor)
+    // of als JSON-string (oudere versies) — beide gevallen afhandelen.
+    if (Array.isArray(raw)) return raw as unknown[];
+    if (typeof raw !== "string" || raw.length < 3) return null;
     try {
       return JSON.parse(raw) as unknown[];
     } catch {

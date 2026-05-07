@@ -348,7 +348,7 @@ export async function deletePost(
 // Uses context=edit so WordPress exposes protected meta fields.
 // Falls back to the pages endpoint if the posts endpoint returns 404.
 export type ElementorMeta = {
-  data: unknown[];
+  data: unknown[] | null; // null = Elementor actief maar nog geen content (lege array)
   pageTemplate: string | null;
   collection: WPCollection;
 };
@@ -388,9 +388,9 @@ export async function fetchPostElementorData(
     } else {
       return null;
     }
-    // Lege array = Elementor heeft de meta aangemaakt maar er is geen echte content.
-    // Dit is geen Elementor-pagina — val terug op post_content.
-    if (parsed.length === 0) return null;
+    // Lege array = Elementor is actief op deze site maar de pagina heeft nog geen content.
+    // Geef terug met data: null zodat de caller weet dat Elementor WEL actief is.
+    if (parsed.length === 0) return { data: null, pageTemplate, collection };
     return { data: parsed, pageTemplate, collection };
   };
 

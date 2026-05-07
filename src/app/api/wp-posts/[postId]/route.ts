@@ -110,10 +110,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
       const liveElementorMeta = await fetchPostElementorData(creds, post.wp_post_id);
       const rawElementorData = liveElementorMeta?.data ?? (post.elementor_data as unknown[] | null);
       elementorDataFound = rawElementorData !== null;
-      // Voor nieuwe berichten op een Elementor-site: bouw een minimale structuur
-      // zodat de content direct via Elementor gepubliceerd wordt.
-      const liveElementorData = rawElementorData ?? (isElementor ? buildDefaultElementorData(content) : null);
-      const useElementorPath = isElementor || elementorDataFound;
+      // liveElementorMeta !== null betekent: Elementor is actief op deze site (zelfs als data leeg is).
+      const elementorSiteDetected = liveElementorMeta !== null;
+      const useElementorPath = isElementor || elementorSiteDetected || elementorDataFound;
+      // Voor nieuwe berichten op een Elementor-site: bouw een minimale structuur.
+      const liveElementorData = rawElementorData ?? (useElementorPath ? buildDefaultElementorData(content) : null);
       wpCollection = liveElementorMeta?.collection ?? "posts";
       console.log(`[publish] liveElementorData: ${elementorDataFound ? "found" : "null"}, isNew: ${!elementorDataFound && isElementor}, template: ${liveElementorMeta?.pageTemplate ?? "unknown"}, collection: ${wpCollection}, useElementorPath: ${useElementorPath}`);
 

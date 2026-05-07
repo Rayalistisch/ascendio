@@ -347,13 +347,17 @@ export async function deletePost(
 // Fetch raw _elementor_data for a specific post (returns parsed JSON array or null).
 // Uses context=edit so WordPress exposes protected meta fields.
 // Falls back to the pages endpoint if the posts endpoint returns 404.
+export type ElementorMeta = {
+  data: unknown[];
+  pageTemplate: string | null;
+};
+
 export async function fetchPostElementorData(
   creds: WPCredentials,
   postId: number,
   options?: { collection?: WPCollection }
-): Promise<unknown[] | null> {
-  const tryFetch = async (collection: string): Promise<unknown[] | null> => {
-    // context=edit is required for WordPress to expose protected meta like _elementor_data
+): Promise<ElementorMeta | null> {
+  const tryFetch = async (collection: string): Promise<ElementorMeta | null> => {
     const url = wpApiUrl(creds, `/${collection}/${postId}?context=edit&_fields=id,meta`);
     const res = await fetch(url, {
       headers: { Authorization: authHeader(creds) },
@@ -361,27 +365,35 @@ export async function fetchPostElementorData(
     });
     console.log(`[elementor] fetchPostElementorData ${collection}/${postId} → HTTP ${res.status}`);
     if (!res.ok) return null;
-    const data = await res.json();
-    const raw = data.meta?._elementor_data;
-    console.log(`[elementor] _elementor_data type: ${typeof raw}, length: ${typeof raw === "string" ? raw.length : Array.isArray(raw) ? raw.length : "N/A"}`);
+    const body = await res.json();
+    const raw = body.meta?._elementor_data;
+    const pageTemplate = typeof body.meta?._wp_page_template === "string"
+      ? body.meta._wp_page_template
+      : null;
+    console.log(`[elementor] _elementor_data type: ${typeof raw}, template: ${pageTemplate}`);
     if (!raw) return null;
     // WordPress kan _elementor_data als al-geparsed array teruggeven (nieuwere Elementor)
     // of als JSON-string (oudere versies) — beide gevallen afhandelen.
-    if (Array.isArray(raw)) return raw as unknown[];
-    if (typeof raw !== "string" || raw.length < 3) return null;
-    try {
-      return JSON.parse(raw) as unknown[];
-    } catch {
-      console.error(`[elementor] JSON.parse failed for post ${postId}`);
+    let parsed: unknown[];
+    if (Array.isArray(raw)) {
+      parsed = raw as unknown[];
+    } else if (typeof raw === "string" && raw.length >= 3) {
+      try {
+        parsed = JSON.parse(raw) as unknown[];
+      } catch {
+        console.error(`[elementor] JSON.parse failed for post ${postId}`);
+        return null;
+      }
+    } else {
       return null;
     }
+    return { data: parsed, pageTemplate };
   };
 
   const collection = options?.collection || "posts";
   try {
     const result = await tryFetch(collection);
     if (result) return result;
-    // Fallback: try the other collection (pages)
     if (collection === "posts") return await tryFetch("pages");
     return null;
   } catch (err) {

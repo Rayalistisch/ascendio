@@ -106,25 +106,32 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
     console.log(`[publish] post ${post.wp_post_id} — isElementor: ${isElementor} (site_toggle: ${site.is_elementor_site}, post_flag: ${post.is_elementor})`);
 
     if (content) {
-      const liveElementorData = await fetchPostElementorData(creds, post.wp_post_id)
+      const liveElementorMeta = await fetchPostElementorData(creds, post.wp_post_id);
+      const liveElementorData = liveElementorMeta?.data
         ?? (post.elementor_data as unknown[] | null);
       elementorDataFound = liveElementorData !== null;
       const useElementorPath = isElementor || elementorDataFound;
-      console.log(`[publish] liveElementorData: ${elementorDataFound ? "found" : "null"}, useElementorPath: ${useElementorPath}`);
+      console.log(`[publish] liveElementorData: ${elementorDataFound ? "found" : "null"}, template: ${liveElementorMeta?.pageTemplate ?? "unknown"}, useElementorPath: ${useElementorPath}`);
 
       if (useElementorPath && liveElementorData) {
         const updatedData = injectMainContent(liveElementorData, content);
+        const metaUpdates: Record<string, string> = {
+          _elementor_data: JSON.stringify(updatedData),
+          _elementor_edit_mode: "builder",
+        };
+        // Bewaar de paginatemplate (bijv. "elementor_full_width") zodat WordPress
+        // die niet terugzet naar de standaard template na de update.
+        if (liveElementorMeta?.pageTemplate) {
+          metaUpdates._wp_page_template = liveElementorMeta.pageTemplate;
+        }
         try {
           await updatePost(creds, post.wp_post_id, {
             title: wpUpdates.title,
             content,
-            meta: {
-              _elementor_data: JSON.stringify(updatedData),
-              _elementor_edit_mode: "builder",
-            },
+            meta: metaUpdates,
           });
           wpPublishPath = "elementor";
-          console.log(`[publish] ✓ Elementor meta + post_content bijgewerkt`);
+          console.log(`[publish] ✓ Elementor meta + template (${liveElementorMeta?.pageTemplate}) + post_content bijgewerkt`);
         } catch (metaErr) {
           console.warn(`[publish] meta-write mislukt (${metaErr instanceof Error ? metaErr.message : metaErr}), fallback naar post_content`);
           await updatePost(creds, post.wp_post_id, { title: wpUpdates.title, content });

@@ -12,10 +12,39 @@ type ElementorElement = {
   elements?: ElementorElement[];
 };
 
+// Widget types die de hoofdtekst van een Elementor-pagina kunnen bevatten,
+// geordend van meest specifiek naar minst specifiek.
+const TEXT_WIDGET_TYPES = new Set([
+  "text-editor",          // Standaard Elementor tekstwidget
+  "theme-post-content",   // Elementor Pro: dynamische post content
+  "wp-widget-block",      // WordPress block widget ingesloten in Elementor
+]);
+
+function getWidgetContent(el: ElementorElement): string {
+  // text-editor en theme-post-content slaan op in settings.editor
+  if (el.settings?.editor != null) return String(el.settings.editor);
+  // wp-widget-block slaat op in settings.content
+  if (el.settings?.content != null) return String(el.settings.content);
+  return "";
+}
+
+function setWidgetContent(el: ElementorElement, newHtml: string): void {
+  if (!el.settings) return;
+  if (el.settings.editor != null || el.widgetType === "text-editor") {
+    el.settings.editor = newHtml;
+  } else if (el.settings.content != null) {
+    el.settings.content = newHtml;
+  } else {
+    el.settings.editor = newHtml;
+  }
+}
+
 function collectTextWidgets(elements: ElementorElement[]): ElementorElement[] {
   const result: ElementorElement[] = [];
   for (const el of elements) {
-    if (el.elType === "widget" && el.widgetType === "text-editor") result.push(el);
+    if (el.elType === "widget" && el.widgetType && TEXT_WIDGET_TYPES.has(el.widgetType)) {
+      result.push(el);
+    }
     if (el.elements?.length) result.push(...collectTextWidgets(el.elements));
   }
   return result;
@@ -25,23 +54,23 @@ function extractMainContent(elements: unknown[]): string {
   const widgets = collectTextWidgets(elements as ElementorElement[]);
   if (widgets.length === 0) return "";
   const best = widgets.reduce((a, b) =>
-    String(b.settings?.editor ?? "").length > String(a.settings?.editor ?? "").length ? b : a
+    getWidgetContent(b).length > getWidgetContent(a).length ? b : a
   );
-  return String(best.settings?.editor ?? "");
+  return getWidgetContent(best);
 }
 
 export function injectMainContent(elements: unknown[], newHtml: string): unknown[] {
   const cloned = JSON.parse(JSON.stringify(elements)) as ElementorElement[];
   const widgets = collectTextWidgets(cloned);
-  console.log(`[elementor] injectMainContent: found ${widgets.length} text-editor widget(s)`);
+  console.log(`[elementor] injectMainContent: found ${widgets.length} text widget(s) (types: ${widgets.map(w => w.widgetType).join(", ")})`);
   if (widgets.length === 0) return cloned;
   const best = widgets.reduce((a, b) =>
-    String(b.settings?.editor ?? "").length > String(a.settings?.editor ?? "").length ? b : a
+    getWidgetContent(b).length > getWidgetContent(a).length ? b : a
   );
-  const oldContent = String(best.settings?.editor ?? "");
-  console.log(`[elementor] replacing widget (${oldContent.length} chars): "${oldContent.slice(0, 80)}..."`);
+  const oldContent = getWidgetContent(best);
+  console.log(`[elementor] replacing ${best.widgetType} widget (${oldContent.length} chars): "${oldContent.slice(0, 80)}..."`);
   console.log(`[elementor] with new content (${newHtml.length} chars): "${newHtml.slice(0, 80)}..."`);
-  if (best.settings) best.settings.editor = newHtml;
+  setWidgetContent(best, newHtml);
   return cloned;
 }
 

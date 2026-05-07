@@ -112,6 +112,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
         const updatedData = injectMainContent(liveElementorData, content);
         wpUpdates.meta = {
           _elementor_data: JSON.stringify(updatedData),
+          // Lege string dwingt Elementor om de gegenereerde CSS te vernieuwen bij de
+          // eerstvolgende page load — zonder dit kan de browser verouderde stijlen tonen.
+          _elementor_css: "",
+          // Zeker stellen dat Elementor deze post als "builder" post behandelt en altijd
+          // uit _elementor_data rendert, niet uit post_content.
+          _elementor_edit_mode: "builder",
         };
         // Stuur ook post_content mee: dit triggert wp_update_post() en save_post hooks
         // zodat caching-plugins (WP Rocket, LiteSpeed, etc.) hun cache invalideren.

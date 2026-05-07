@@ -102,41 +102,34 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
     const isElementor = site.is_elementor_site || post.is_elementor;
     console.log(`[publish] post ${post.wp_post_id} — isElementor: ${isElementor} (site_toggle: ${site.is_elementor_site}, post_flag: ${post.is_elementor})`);
 
-    if (content && isElementor) {
-      // Elementor-site: haal altijd de verse _elementor_data op van WP zodat we nooit
-      // verouderde of ontbrekende data gebruiken, en injecteer de content in de text widget.
+    if (content) {
+      // Haal altijd live _elementor_data op — ook als is_elementor false is.
+      // De sync detecteert Elementor niet altijd correct (mist context=edit),
+      // dus vertrouwen we hier op de live data als leidend signaal.
       const liveElementorData = await fetchPostElementorData(creds, post.wp_post_id)
         ?? (post.elementor_data as unknown[] | null);
-      console.log(`[publish] elementorData source: ${liveElementorData ? (post.elementor_data ? "db-fallback or live" : "live") : "NONE"}, widgets: ${liveElementorData ? "checking..." : "N/A"}`);
-      if (liveElementorData) {
+      const useElementorPath = isElementor || liveElementorData !== null;
+      console.log(`[publish] liveElementorData: ${liveElementorData ? "found" : "null"}, useElementorPath: ${useElementorPath}`);
+
+      if (useElementorPath && liveElementorData) {
         const updatedData = injectMainContent(liveElementorData, content);
         wpUpdates.meta = {
           _elementor_data: JSON.stringify(updatedData),
-          // Lege string dwingt Elementor om de gegenereerde CSS te vernieuwen bij de
-          // eerstvolgende page load — zonder dit kan de browser verouderde stijlen tonen.
-          _elementor_css: "",
-          // Zeker stellen dat Elementor deze post als "builder" post behandelt en altijd
-          // uit _elementor_data rendert, niet uit post_content.
+          // Zorgt dat Elementor altijd uit _elementor_data rendert, niet uit post_content.
           _elementor_edit_mode: "builder",
         };
-        // Stuur ook post_content mee: dit triggert wp_update_post() en save_post hooks
-        // zodat caching-plugins (WP Rocket, LiteSpeed, etc.) hun cache invalideren.
-        // Elementor leest voor rendering altijd _elementor_data, niet post_content.
+        // post_content triggert wp_update_post() zodat caching-plugins hun cache invalideren.
         wpUpdates.content = content;
-        console.log(`[publish] → sending via meta._elementor_data + post_content cache-bust (${JSON.stringify(updatedData).length} chars)`);
+        console.log(`[publish] → Elementor path: meta._elementor_data (${JSON.stringify(updatedData).length} chars) + post_content cache-bust`);
+      } else if (acfFields.length > 0) {
+        // ACF-site: verdeel content over alle geconfigureerde WYSIWYG velden
+        const chunks = splitHtmlByH2(content, acfFields.length);
+        wpUpdates.acf = Object.fromEntries(
+          acfFields.map((field: string, i: number) => [field, chunks[i] ?? ""])
+        );
       } else {
-        // Geen Elementor-data beschikbaar (API exposeert het niet) — fallback naar post_content
-        console.warn(`[publish] FALLBACK post_content — _elementor_data niet beschikbaar voor post ${post.wp_post_id}`);
         wpUpdates.content = content;
       }
-    } else if (content && acfFields.length > 0) {
-      // ACF-site: verdeel content over alle geconfigureerde WYSIWYG velden
-      const chunks = splitHtmlByH2(content, acfFields.length);
-      wpUpdates.acf = Object.fromEntries(
-        acfFields.map((field: string, i: number) => [field, chunks[i] ?? ""])
-      );
-    } else if (content) {
-      wpUpdates.content = content;
     }
 
     if (Object.keys(wpUpdates).length > 0) {

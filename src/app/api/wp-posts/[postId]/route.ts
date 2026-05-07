@@ -151,6 +151,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ po
         wpPublishPath = "acf";
       } else {
         wpUpdates.content = content;
+        // Herstel eventuele schade van eerdere commits die _elementor_edit_mode=builder
+        // op niet-Elementor pagina's hebben gezet. Leegmaken zorgt dat WordPress
+        // weer vanuit post_content rendert i.p.v. een lege Elementor-layout.
+        wpUpdates.meta = { _elementor_edit_mode: "" };
         wpPublishPath = "post_content";
       }
     }

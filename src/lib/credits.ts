@@ -3,6 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const CREDIT_COSTS = {
   blog_post_no_images: 5,
   blog_post_with_images: 8,
+  programmatic_page: 8,
+  keyword_research: 1,
   seo_fix: 1,
   cluster_suggest: 2,
   content_rewrite: 3,
@@ -29,6 +31,34 @@ export async function checkCredits(
 
   const remaining = data?.credits_remaining ?? 0;
   return { enough: remaining >= cost, remaining };
+}
+
+/**
+ * Preflight for a bulk operation (e.g. programmatic generation of N pages).
+ * Returns how many units the user can currently afford so the caller can
+ * either refuse the batch or cap it, instead of running out mid-run.
+ */
+export async function checkBulkCredits(
+  supabase: SupabaseClient,
+  userId: string,
+  action: CreditAction,
+  count: number
+): Promise<{ remaining: number; costPer: number; affordable: number; enoughForAll: boolean }> {
+  const costPer = CREDIT_COSTS[action];
+  const { data } = await supabase
+    .from("asc_subscriptions")
+    .select("credits_remaining")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const remaining = data?.credits_remaining ?? 0;
+  const affordable = costPer > 0 ? Math.floor(remaining / costPer) : count;
+  return {
+    remaining,
+    costPer,
+    affordable: Math.min(affordable, count),
+    enoughForAll: affordable >= count,
+  };
 }
 
 /**

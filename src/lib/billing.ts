@@ -51,6 +51,7 @@ export const TIERS: TierDefinition[] = [
       "150 AI credits per maand",
       "Alles van Starter",
       "Clusters & topic planning",
+      "Programmatic SEO (bulk pagina's uit data)",
       "Tone of voice per site",
     ],
     stripePriceEnv: "STRIPE_PRICE_PRO",
@@ -95,13 +96,13 @@ export const TIERS: TierDefinition[] = [
 ];
 
 // Feature gating per tier
-export type GatedFeature = "clusters" | "social" | "tone_of_voice" | "team";
+export type GatedFeature = "clusters" | "social" | "tone_of_voice" | "team" | "programmatic" | "keyword_research";
 
 const TIER_FEATURES: Record<TierId, GatedFeature[]> = {
   starter: [],
-  pro: ["clusters", "social", "tone_of_voice"],
-  business: ["clusters", "social", "tone_of_voice", "team"],
-  custom: ["clusters", "social", "tone_of_voice", "team"],
+  pro: ["clusters", "social", "tone_of_voice", "programmatic", "keyword_research"],
+  business: ["clusters", "social", "tone_of_voice", "team", "programmatic", "keyword_research"],
+  custom: ["clusters", "social", "tone_of_voice", "team", "programmatic", "keyword_research"],
 };
 
 // Legacy tier names from before the rename (growth → pro, scale → business)

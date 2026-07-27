@@ -16,6 +16,8 @@ import {
   ScanSearch,
   Search,
   Network,
+  Layers,
+  KeyRound,
   FileText,
   ChevronUp,
   CreditCard,
@@ -53,12 +55,14 @@ const navigationGroups: { label: string; items: NavItem[] }[] = [
       { name: "Planning", href: "/schedule", icon: CalendarClock, siteScoped: true },
       { name: "Templates", href: "/templates", icon: FileText, siteScoped: true },
       { name: "Bronnen", href: "/sources", icon: Rss, siteScoped: true },
+      { name: "Programmatic", href: "/programmatic", icon: Layers, siteScoped: true, gatedFeature: "programmatic" },
       { name: "Runs", href: "/runs", icon: History, siteScoped: true },
     ],
   },
   {
     label: "SEO",
     items: [
+      { name: "Keywords", href: "/keywords", icon: KeyRound, siteScoped: true, gatedFeature: "keyword_research" },
       { name: "SEO Editor", href: "/seo-editor", icon: PenTool, siteScoped: true },
       { name: "Scanner", href: "/scanner", icon: ScanSearch, siteScoped: true },
       { name: "Indexering", href: "/indexing", icon: Search, siteScoped: true },

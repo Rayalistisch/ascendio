@@ -502,6 +502,7 @@ export async function POST(request: Request) {
     let clusterContext = undefined;
     let forcedTopic = undefined;
     let forcedTitle = undefined;
+    let forcedSlug: string | undefined;
     let clusterIbvisionUrlPrefix: string | null = null;
     let targetKeywords: string[] | undefined;
     const payloadGenerationSettings: GenerationSettings | null = generationSettings
@@ -582,7 +583,17 @@ export async function POST(request: Request) {
         };
 
         if (currentTopic) {
-          forcedTopic = currentTopic.title;
+          // Programmatic topics carry a pattern-resolved title + slug; force
+          // both so the page is deterministic and matches the dataset row.
+          const isProgrammatic =
+            cluster.mode === "programmatic" || !!currentTopic.dataset_row_id;
+          if (isProgrammatic) {
+            forcedTitle = currentTopic.title;
+            forcedTopic = currentTopic.description || currentTopic.title;
+            forcedSlug = currentTopic.slug || undefined;
+          } else {
+            forcedTopic = currentTopic.title;
+          }
           targetKeywords = currentTopic.target_keywords;
         } else if (isPillar) {
           forcedTopic = cluster.pillar_topic;
@@ -834,10 +845,14 @@ export async function POST(request: Request) {
     );
 
     // 5. Generate featured image (WordPress only — IBVision has no media upload API)
-    const slug = article.title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
+    // Programmatic runs carry a pattern-resolved slug; prefer it over the
+    // title-derived fallback so URLs match the dataset/slug_pattern exactly.
+    const slug =
+      forcedSlug ||
+      article.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
     const filename = `${slug}-featured.png`;
     let media: { id: number; url: string } | null = null;
 

@@ -23,6 +23,7 @@ interface SiteInfo {
   id: string;
   name: string;
   wp_base_url: string;
+  wp_username: string;
   status: string;
   default_language: string;
   tone_of_voice: ToneOfVoice | null;
@@ -77,6 +78,15 @@ export default function SiteDetailPage() {
   const [savingElementor, setSavingElementor] = useState(false);
   const [elementorSaved, setElementorSaved] = useState(false);
 
+  // WordPress-verbinding
+  const [wpBaseUrl, setWpBaseUrl] = useState("");
+  const [wpUsername, setWpUsername] = useState("");
+  const [wpAppPassword, setWpAppPassword] = useState("");
+  const [savingWp, setSavingWp] = useState(false);
+  const [wpSaved, setWpSaved] = useState(false);
+  const [testingWp, setTestingWp] = useState(false);
+  const [wpTestResult, setWpTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
   // Tone of voice
   const [tone, setTone] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
@@ -98,6 +108,8 @@ export default function SiteDetailPage() {
         if (found?.acf_content_fields) setAcfContentFields(found.acf_content_fields);
         if (found?.sitemap_url) setSitemapUrl(found.sitemap_url);
         setIsElementorSite(found?.is_elementor_site ?? false);
+        setWpBaseUrl(found?.wp_base_url ?? "");
+        setWpUsername(found?.wp_username ?? "");
         if (found?.tone_of_voice) {
           const tov = found.tone_of_voice;
           setTone(tov.tone || "");
@@ -255,6 +267,57 @@ export default function SiteDetailPage() {
     }
   }
 
+  async function testWpConnection() {
+    setTestingWp(true);
+    setWpTestResult(null);
+    try {
+      const res = await fetch("/api/sites/test-connection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform: "wordpress", wpBaseUrl, wpUsername, wpAppPassword }),
+      });
+      const data = await res.json();
+      setWpTestResult(
+        data.success
+          ? { ok: true, message: "Verbinding gelukt ✓" }
+          : { ok: false, message: data.error || "Verbinding mislukt" }
+      );
+    } catch {
+      setWpTestResult({ ok: false, message: "Kon de verbinding niet testen" });
+    } finally {
+      setTestingWp(false);
+    }
+  }
+
+  async function saveWpConnection() {
+    setSavingWp(true);
+    setWpSaved(false);
+    try {
+      const res = await fetch("/api/sites", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: siteId,
+          wpBaseUrl,
+          wpUsername,
+          // Alleen meesturen als ingevuld — leeg = huidige wachtwoord behouden.
+          ...(wpAppPassword.trim() ? { wpAppPassword } : {}),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        if (data.site) setSite(data.site);
+        setWpAppPassword("");
+        setWpSaved(true);
+        setTimeout(() => setWpSaved(false), 3000);
+      } else {
+        window.alert(data.error || "Opslaan mislukt");
+      }
+    } finally {
+      setSavingWp(false);
+    }
+  }
+
   async function saveToneOfVoice() {
     setSavingTone(true);
     setToneSaved(false);
@@ -329,6 +392,61 @@ export default function SiteDetailPage() {
             <span className="text-muted-foreground">Taal:</span>
             <p>{site.default_language}</p>
           </div>
+        </div>
+      </div>
+
+      {/* WordPress-verbinding */}
+      <div className="rounded-xl border bg-card p-4 space-y-3">
+        <h2 className="font-semibold">WordPress-verbinding</h2>
+        <p className="text-sm text-muted-foreground">
+          Werk de URL, gebruikersnaam of het app-wachtwoord bij als de site is verhuisd of het
+          wachtwoord is vernieuwd. Historie en instellingen blijven behouden.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs">WordPress URL</Label>
+            <Input
+              value={wpBaseUrl}
+              onChange={(e) => setWpBaseUrl(e.target.value)}
+              placeholder="https://coddin.nl"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Gebruikersnaam</Label>
+            <Input value={wpUsername} onChange={(e) => setWpUsername(e.target.value)} />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Applicatie-wachtwoord</Label>
+          <Input
+            type="password"
+            value={wpAppPassword}
+            onChange={(e) => setWpAppPassword(e.target.value)}
+            placeholder="Laat leeg om het huidige wachtwoord te behouden"
+            autoComplete="new-password"
+          />
+          <p className="text-xs text-muted-foreground">
+            Aan te maken in WordPress onder Gebruikers → Profiel → Applicatiewachtwoorden.
+          </p>
+        </div>
+        {wpTestResult && (
+          <p className={`text-xs ${wpTestResult.ok ? "text-green-600" : "text-destructive"}`}>
+            {wpTestResult.message}
+          </p>
+        )}
+        <div className="flex items-center gap-2">
+          <Button onClick={saveWpConnection} disabled={savingWp} size="sm">
+            {savingWp ? "Opslaan..." : wpSaved ? "Opgeslagen ✓" : "Verbinding opslaan"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={testWpConnection}
+            disabled={testingWp || !wpAppPassword.trim()}
+            title={!wpAppPassword.trim() ? "Vul een app-wachtwoord in om te testen" : undefined}
+          >
+            {testingWp ? "Testen..." : "Test verbinding"}
+          </Button>
         </div>
       </div>
 

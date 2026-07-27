@@ -76,7 +76,7 @@ export async function PATCH(request: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { id, toneOfVoice, acfContentFields, sitemapUrl, isElementorSite } = body;
+  const { id, name, toneOfVoice, acfContentFields, sitemapUrl, isElementorSite, wpBaseUrl, wpUsername, wpAppPassword } = body;
   if (!id) return NextResponse.json({ error: "Missing site id" }, { status: 400 });
 
   if (toneOfVoice !== undefined && toneOfVoice !== null && typeof toneOfVoice !== "object") {
@@ -84,10 +84,28 @@ export async function PATCH(request: Request) {
   }
 
   const updates: Record<string, unknown> = {};
+  if (name !== undefined && typeof name === "string" && name.trim()) updates.name = name.trim();
   if (toneOfVoice !== undefined) updates.tone_of_voice = toneOfVoice ?? null;
   if (acfContentFields !== undefined) updates.acf_content_fields = acfContentFields || null;
   if (sitemapUrl !== undefined) updates.sitemap_url = sitemapUrl || null;
   if (isElementorSite !== undefined) updates.is_elementor_site = Boolean(isElementorSite);
+
+  // WordPress-verbinding bijwerken (bijv. als de site is verhuisd of het
+  // app-wachtwoord is vernieuwd). Het wachtwoord wordt alleen overschreven als
+  // er een niet-lege waarde is meegegeven — leeg laten = huidige behouden.
+  if (typeof wpBaseUrl === "string" && wpBaseUrl.trim()) {
+    updates.wp_base_url = wpBaseUrl.trim().replace(/\/+$/, "");
+  }
+  if (typeof wpUsername === "string" && wpUsername.trim()) {
+    updates.wp_username = wpUsername.trim();
+  }
+  if (typeof wpAppPassword === "string" && wpAppPassword.trim()) {
+    updates.wp_app_password_encrypted = encrypt(wpAppPassword.trim());
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "Geen wijzigingen opgegeven" }, { status: 400 });
+  }
 
   const { data, error } = await supabase
     .from("asc_sites")

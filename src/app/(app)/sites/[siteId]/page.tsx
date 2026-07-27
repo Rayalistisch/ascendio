@@ -329,6 +329,30 @@ export default function SiteDetailPage() {
     }
   }
 
+  const [deleting, setDeleting] = useState(false);
+
+  async function deleteSite() {
+    if (
+      !window.confirm(
+        `Weet je zeker dat je "${site?.name}" wilt verwijderen? Alle clusters, runs, cache en instellingen in Ascendio worden verwijderd. Je WordPress-content zelf blijft ongemoeid. Dit kan niet ongedaan worden gemaakt.`
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/sites?id=${siteId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        window.alert(d.error || "Verwijderen mislukt");
+        return;
+      }
+      router.push("/sites");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   async function savePublishAsDraft(value: boolean) {
     setSavingDraft(true);
     setDraftSaved(false);
@@ -800,6 +824,21 @@ export default function SiteDetailPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Gevarenzone */}
+      <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+        <div>
+          <h2 className="font-semibold text-destructive">Site verwijderen</h2>
+          <p className="text-sm text-muted-foreground">
+            Verwijdert deze site met alle clusters, runs, cache en instellingen uit Ascendio. Je
+            WordPress-content zelf blijft staan. Dit kan niet ongedaan worden gemaakt.
+          </p>
+        </div>
+        <Button variant="destructive" size="sm" onClick={deleteSite} disabled={deleting}>
+          <Trash2 className="h-4 w-4 mr-1.5" />
+          {deleting ? "Verwijderen..." : "Site verwijderen"}
+        </Button>
       </div>
     </div>
   );

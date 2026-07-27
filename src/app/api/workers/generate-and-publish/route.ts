@@ -27,6 +27,8 @@ import {
 } from "@/lib/qstash";
 import { publishContent as publishToIBVision } from "@/lib/ibvision";
 import { checkCredits, deductCredits, CREDIT_COSTS } from "@/lib/credits";
+import { embedText } from "@/lib/embeddings";
+import { buildEmbeddingInput, findRelatedPostsForQuery } from "@/lib/link-graph";
 import {
   stripHtmlToPlainText,
   findTopSimilarityMatches,
@@ -642,6 +644,34 @@ export async function POST(request: Request) {
       .eq("site_id", siteId)
       .order("priority", { ascending: false });
 
+    // 3.9. Link-graaf: kies interne link-kandidaten semantisch i.p.v. de
+    // recente-300-lijst. Degradeert netjes: zonder embeddings (nog niet
+    // gebackfilld) of zonder OpenAI-key blijft de bestaande lijst staan.
+    try {
+      const linkQuery = [forcedTitle, forcedTopic, ...(targetKeywords || [])]
+        .filter(Boolean)
+        .join(" — ");
+      if (linkQuery) {
+        const related = await findRelatedPostsForQuery(supabase, siteId, linkQuery, 12);
+        if (related.length > 0) {
+          existingPosts = related.map((r) => ({ slug: r.slug, title: r.title }));
+          await logStep(
+            supabase,
+            runId,
+            "info",
+            `${related.length} interne links semantisch geselecteerd via link-graaf`
+          );
+        }
+      }
+    } catch (linkErr) {
+      await logStep(
+        supabase,
+        runId,
+        "warn",
+        "Link-graaf overgeslagen: " + (linkErr instanceof Error ? linkErr.message : "onbekend")
+      );
+    }
+
     // 4. Generate enhanced article
     await logStep(supabase, runId, "info", "Artikel genereren via OpenAI...");
     let article = await generateEnhancedArticle({
@@ -1177,7 +1207,16 @@ export async function POST(request: Request) {
     }
 
     if (platform !== "ibvision") {
-      // 11. Cache the new post in asc_wp_posts (WordPress only)
+      // 11. Cache the new post in asc_wp_posts (WordPress only).
+      // Embed it right away so it joins the link-graaf for future articles.
+      let newPostEmbedding: number[] | null = null;
+      try {
+        newPostEmbedding = await embedText(
+          buildEmbeddingInput(article.title, article.metaDescription)
+        );
+      } catch {
+        // Non-fatal: post is still cached, just without an embedding yet.
+      }
       await supabase.from("asc_wp_posts").upsert(
         {
           user_id: userId,
@@ -1193,6 +1232,12 @@ export async function POST(request: Request) {
           status: "publish",
           last_synced_at: new Date().toISOString(),
           wp_created_at: new Date().toISOString(),
+          ...(newPostEmbedding
+            ? {
+                embedding: newPostEmbedding as unknown as string,
+                embedding_updated_at: new Date().toISOString(),
+              }
+            : {}),
         },
         { onConflict: "site_id,wp_post_id" }
       );

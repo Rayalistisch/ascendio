@@ -96,13 +96,13 @@ export const TIERS: TierDefinition[] = [
 ];
 
 // Feature gating per tier
-export type GatedFeature = "clusters" | "social" | "tone_of_voice" | "team" | "programmatic" | "keyword_research";
+export type GatedFeature = "clusters" | "social" | "tone_of_voice" | "team" | "programmatic" | "keyword_research" | "link_graph";
 
 const TIER_FEATURES: Record<TierId, GatedFeature[]> = {
   starter: [],
-  pro: ["clusters", "social", "tone_of_voice", "programmatic", "keyword_research"],
-  business: ["clusters", "social", "tone_of_voice", "team", "programmatic", "keyword_research"],
-  custom: ["clusters", "social", "tone_of_voice", "team", "programmatic", "keyword_research"],
+  pro: ["clusters", "social", "tone_of_voice", "programmatic", "keyword_research", "link_graph"],
+  business: ["clusters", "social", "tone_of_voice", "team", "programmatic", "keyword_research", "link_graph"],
+  custom: ["clusters", "social", "tone_of_voice", "team", "programmatic", "keyword_research", "link_graph"],
 };
 
 // Legacy tier names from before the rename (growth → pro, scale → business)

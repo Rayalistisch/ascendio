@@ -211,6 +211,14 @@ export async function enqueueRefreshJob(params: {
   return publishToQStash("/api/workers/refresh-content", params);
 }
 
+export async function enqueueInterlinkJob(params: {
+  proposalId: string;
+  siteId: string;
+  userId: string;
+}): Promise<{ messageId: string }> {
+  return publishToQStash("/api/workers/interlink", params);
+}
+
 export async function verifyQStashSignature(
   signature: string | null,
   body: string

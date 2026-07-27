@@ -1359,6 +1359,78 @@ export async function analyzeContentSEO(
   );
 }
 
+export interface InsertedLink {
+  url: string;
+  anchor: string;
+  title?: string;
+}
+
+/**
+ * Insert internal links into existing HTML, pointing to given target pages.
+ * STRICT: only wraps existing phrases in <a> tags — no other text changes.
+ * Returns the modified HTML plus the links that were actually added.
+ */
+export async function insertInternalLinks(input: {
+  html: string;
+  targets: { url: string; title: string }[];
+  language?: string;
+  maxLinks?: number;
+}): Promise<{ html: string; addedLinks: InsertedLink[] }> {
+  const client = getClient();
+  const lang = input.language || "Dutch";
+  const maxLinks = input.maxLinks ?? 3;
+  if (!input.targets.length || !input.html.trim()) {
+    return { html: input.html, addedLinks: [] };
+  }
+
+  const targetList = input.targets
+    .map((t, i) => `${i + 1}. ${t.title} → ${t.url}`)
+    .join("\n");
+
+  const response = await client.chat.completions.create({
+    model: "gpt-4o",
+    temperature: 0.2,
+    messages: [
+      {
+        role: "system",
+        content: `Je voegt interne links toe aan bestaande HTML-content (${lang}). STRIKTE REGELS:
+- Verander NIETS aan de tekst: geen woorden toevoegen, verwijderen of herschrijven.
+- Voeg UITSLUITEND <a href="...">...</a> toe rond bestaande, relevante ankerzinnen die al in de tekst staan.
+- Link alleen waar het inhoudelijk logisch is; forceer niets. Liever minder links dan irrelevante.
+- Maximaal ${maxLinks} links. Geen dubbele links naar dezelfde URL. Link niet in koppen (h1-h6).
+- Sla een doelpagina over als er geen natuurlijke ankerzin voor bestaat.
+- Behoud alle bestaande HTML exact zoals hij is.
+
+Beschikbare doelpagina's:
+${targetList}
+
+Antwoord met ALLEEN een JSON-object: { "html": "<de volledige HTML met toegevoegde links>", "addedLinks": [{ "url": "...", "anchor": "de gelinkte tekst" }] }`,
+      },
+      { role: "user", content: input.html.substring(0, 12000) },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  try {
+    const parsed = JSON.parse(response.choices[0].message.content || "{}");
+    const html = typeof parsed.html === "string" && parsed.html.trim() ? parsed.html : input.html;
+    const addedLinks: InsertedLink[] = Array.isArray(parsed.addedLinks)
+      ? parsed.addedLinks
+          .filter((l: unknown): l is { url: string; anchor: string } =>
+            !!l && typeof (l as { url?: unknown }).url === "string"
+          )
+          .map((l: { url: string; anchor?: string }) => ({
+            url: l.url,
+            anchor: typeof l.anchor === "string" ? l.anchor : "",
+            title: input.targets.find((t) => t.url === l.url)?.title,
+          }))
+      : [];
+    return { html, addedLinks };
+  } catch {
+    return { html: input.html, addedLinks: [] };
+  }
+}
+
 export interface BrandVoiceAnalysis {
   businessName?: string;
   tagline?: string;

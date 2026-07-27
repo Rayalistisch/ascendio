@@ -1785,6 +1785,13 @@ export default function ClustersPage() {
                           <Sparkles className="h-4 w-4 mr-1" />
                           {suggesting ? "Laden..." : "AI Suggesties"}
                         </Button>
+                        <Link
+                          href={`/clusters/interlink?clusterId=${cluster.id}`}
+                          className="inline-flex h-8 items-center rounded-md border px-3 text-sm font-medium shadow-xs hover:bg-accent"
+                        >
+                          <Network className="h-4 w-4 mr-1" />
+                          Interne links
+                        </Link>
                         {retryableTopicCount > 0 && (
                           <Button size="sm" onClick={() => generateArticles(cluster.id)} disabled={generating}>
                             <Play className="h-4 w-4 mr-1" />

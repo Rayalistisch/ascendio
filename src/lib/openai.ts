@@ -1359,6 +1359,67 @@ export async function analyzeContentSEO(
   );
 }
 
+export interface BrandVoiceAnalysis {
+  businessName?: string;
+  tagline?: string;
+  description?: string;
+  toneOfVoice: ToneOfVoice;
+}
+
+/**
+ * Analyse a website's copy into a reusable brand voice + basic identity.
+ * Feeds a brand identity's tone_of_voice (same shape as asc_sites.tone_of_voice).
+ */
+export async function analyzeBrandVoice(input: {
+  text: string;
+  language?: string;
+}): Promise<BrandVoiceAnalysis> {
+  const client = getClient();
+  const lang = input.language || "Dutch";
+  const response = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.4,
+    messages: [
+      {
+        role: "system",
+        content: `Je analyseert de website-copy van een merk en destilleert de merkstem. Antwoord in het ${lang}. Geef ALLEEN een JSON-object terug met exact deze velden:
+{
+  "businessName": "de bedrijfs-/merknaam",
+  "tagline": "korte pakkende tagline (max 120 tekens)",
+  "description": "1-2 zinnen over wat het merk doet en voor wie",
+  "toneOfVoice": {
+    "tone": "beschrijving van de schrijfstijl/toon in 1-2 zinnen",
+    "targetAudience": "de doelgroep",
+    "brandGuidelines": "korte merkrichtlijnen voor content (max 3 zinnen)",
+    "avoidWords": ["woorden/frases die niet bij het merk passen"],
+    "exampleSentences": ["2-3 voorbeeldzinnen die de merkstem illustreren"]
+  }
+}
+Baseer alles uitsluitend op de aangeleverde tekst; verzin geen feiten.`,
+      },
+      { role: "user", content: input.text.substring(0, 6000) },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const parsed = JSON.parse(response.choices[0].message.content || "{}");
+  const tov = (parsed.toneOfVoice ?? {}) as Record<string, unknown>;
+  return {
+    businessName: typeof parsed.businessName === "string" ? parsed.businessName : undefined,
+    tagline: typeof parsed.tagline === "string" ? parsed.tagline : undefined,
+    description: typeof parsed.description === "string" ? parsed.description : undefined,
+    toneOfVoice: {
+      tone: typeof tov.tone === "string" ? tov.tone : undefined,
+      targetAudience: typeof tov.targetAudience === "string" ? tov.targetAudience : undefined,
+      brandGuidelines: typeof tov.brandGuidelines === "string" ? tov.brandGuidelines : undefined,
+      avoidWords: Array.isArray(tov.avoidWords) ? tov.avoidWords.map(String) : undefined,
+      exampleSentences: Array.isArray(tov.exampleSentences)
+        ? tov.exampleSentences.map(String)
+        : undefined,
+    },
+  };
+}
+
 /**
  * Generate structured data (JSON-LD) for Article, FAQ, or HowTo schema types.
  * Article and FAQ are generated deterministically; HowTo uses AI.

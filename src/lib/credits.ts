@@ -5,6 +5,7 @@ export const CREDIT_COSTS = {
   blog_post_with_images: 8,
   programmatic_page: 8,
   keyword_research: 1,
+  brand_scan: 2,
   seo_fix: 1,
   cluster_suggest: 2,
   content_rewrite: 3,

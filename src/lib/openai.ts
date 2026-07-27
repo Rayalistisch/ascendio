@@ -3,6 +3,7 @@ import {
   normalizeGenerationSettings,
   type GenerationSettings,
 } from "@/lib/generation-settings";
+import { applyAnchorLinks } from "@/lib/interlink";
 
 function getClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -1367,8 +1368,11 @@ export interface InsertedLink {
 
 /**
  * Insert internal links into existing HTML, pointing to given target pages.
- * STRICT: only wraps existing phrases in <a> tags — no other text changes.
- * Returns the modified HTML plus the links that were actually added.
+ *
+ * The LLM ONLY proposes {anchor, url} pairs (an exact substring of the visible
+ * text + the target). The actual insertion is done deterministically by
+ * applyAnchorLinks, which wraps only those exact phrases and leaves the rest of
+ * the HTML byte-for-byte identical — so footer/styling/shortcodes never break.
  */
 export async function insertInternalLinks(input: {
   html: string;
@@ -1393,42 +1397,48 @@ export async function insertInternalLinks(input: {
     messages: [
       {
         role: "system",
-        content: `Je voegt interne links toe aan bestaande HTML-content (${lang}). STRIKTE REGELS:
-- Verander NIETS aan de tekst: geen woorden toevoegen, verwijderen of herschrijven.
-- Voeg UITSLUITEND <a href="...">...</a> toe rond bestaande, relevante ankerzinnen die al in de tekst staan.
-- Link alleen waar het inhoudelijk logisch is; forceer niets. Liever minder links dan irrelevante.
-- Maximaal ${maxLinks} links. Geen dubbele links naar dezelfde URL. Link niet in koppen (h1-h6).
-- Sla een doelpagina over als er geen natuurlijke ankerzin voor bestaat.
-- Behoud alle bestaande HTML exact zoals hij is.
+        content: `Je bepaalt waar interne links passen in bestaande content (${lang}). Je herschrijft NIETS — je wijst alleen ankerzinnen aan.
+
+REGELS:
+- Een "anchor" MOET een exacte, letterlijk voorkomende woordgroep uit de zichtbare tekst zijn (kopieer hem precies, inclusief hoofdletters/leestekens). Verzin niets.
+- Kies korte, natuurlijke ankerzinnen (2-6 woorden) die inhoudelijk bij de doelpagina passen.
+- Maximaal ${maxLinks} links, elk naar een andere URL. Geen ankers uit koppen/titels.
+- Sla een doelpagina over als er geen passende ankerzin bestaat. Liever minder dan geforceerd.
 
 Beschikbare doelpagina's:
 ${targetList}
 
-Antwoord met ALLEEN een JSON-object: { "html": "<de volledige HTML met toegevoegde links>", "addedLinks": [{ "url": "...", "anchor": "de gelinkte tekst" }] }`,
+Antwoord met ALLEEN JSON: { "suggestions": [{ "anchor": "exacte tekst uit de content", "url": "doel-URL" }] }`,
       },
       { role: "user", content: input.html.substring(0, 12000) },
     ],
     response_format: { type: "json_object" },
   });
 
+  let suggestions: { anchor: string; url: string; title?: string }[] = [];
   try {
     const parsed = JSON.parse(response.choices[0].message.content || "{}");
-    const html = typeof parsed.html === "string" && parsed.html.trim() ? parsed.html : input.html;
-    const addedLinks: InsertedLink[] = Array.isArray(parsed.addedLinks)
-      ? parsed.addedLinks
-          .filter((l: unknown): l is { url: string; anchor: string } =>
-            !!l && typeof (l as { url?: unknown }).url === "string"
-          )
-          .map((l: { url: string; anchor?: string }) => ({
-            url: l.url,
-            anchor: typeof l.anchor === "string" ? l.anchor : "",
-            title: input.targets.find((t) => t.url === l.url)?.title,
-          }))
-      : [];
-    return { html, addedLinks };
+    if (Array.isArray(parsed.suggestions)) {
+      suggestions = parsed.suggestions
+        .filter(
+          (s: unknown): s is { anchor: string; url: string } =>
+            !!s &&
+            typeof (s as { anchor?: unknown }).anchor === "string" &&
+            typeof (s as { url?: unknown }).url === "string"
+        )
+        .map((s: { anchor: string; url: string }) => ({
+          anchor: s.anchor,
+          url: s.url,
+          title: input.targets.find((t) => t.url === s.url)?.title,
+        }));
+    }
   } catch {
-    return { html: input.html, addedLinks: [] };
+    suggestions = [];
   }
+
+  // Deterministische insertie — verandert alleen de ankerzinnen.
+  const { html, added } = applyAnchorLinks(input.html, suggestions);
+  return { html, addedLinks: added };
 }
 
 export interface BrandVoiceAnalysis {

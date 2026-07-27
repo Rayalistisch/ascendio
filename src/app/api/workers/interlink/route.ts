@@ -44,19 +44,34 @@ export async function POST(request: Request) {
   // Huidige content van de pagina uit de cache.
   const { data: post } = await supabase
     .from("asc_wp_posts")
-    .select("content")
+    .select("content, is_elementor")
     .eq("site_id", siteId)
     .eq("wp_post_id", proposal.wp_post_id)
     .maybeSingle();
   const html = post?.content;
   if (!html || !html.trim()) return fail("Geen content voor deze pagina in de cache");
 
-  // Doelpagina's = andere pagina's in hetzelfde cluster.
   const { data: siteInfo } = await supabase
     .from("asc_sites")
-    .select("default_language")
+    .select("default_language, is_elementor_site, acf_content_fields")
     .eq("id", siteId)
     .maybeSingle();
+
+  // Guard: bij Elementor/ACF-pagina's zit de zichtbare content niet in
+  // post_content. Terugschrijven zou de builder-opmaak (footer/styling) slopen,
+  // dus die slaan we bewust over tot er dedicated ondersteuning is.
+  if (post?.is_elementor || siteInfo?.is_elementor_site || siteInfo?.acf_content_fields) {
+    await supabase
+      .from("asc_interlink_proposals")
+      .update({
+        status: "failed",
+        error_message:
+          "Interne links worden voor Elementor/ACF-pagina's nog niet ondersteund (zou de opmaak overschrijven).",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", proposalId);
+    return NextResponse.json({ ok: false, skipped: "elementor_or_acf" });
+  }
 
   const targets: { url: string; title: string }[] = [];
 

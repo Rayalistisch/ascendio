@@ -203,6 +203,14 @@ export async function enqueueIndexingJob(params: {
   return publishToQStash("/api/workers/google-indexing", params);
 }
 
+export async function enqueueRefreshJob(params: {
+  refreshId: string;
+  siteId: string;
+  userId: string;
+}): Promise<{ messageId: string }> {
+  return publishToQStash("/api/workers/refresh-content", params);
+}
+
 export async function verifyQStashSignature(
   signature: string | null,
   body: string

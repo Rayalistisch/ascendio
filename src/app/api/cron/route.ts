@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { enqueueGenerateJob, enqueueSourceFetchJob } from "@/lib/qstash";
 import { verifyQStashSignature } from "@/lib/qstash";
 import { getNextRunDate } from "@/lib/scheduler";
+import { scanSiteForRefresh } from "@/lib/refresh-scan";
 
 // Called by QStash schedule (POST) or Vercel cron / manual (GET)
 export async function POST(request: Request) {
@@ -109,9 +110,32 @@ async function runCron() {
     }
   }
 
+  // === 3. Content refresh scan (weekly per site, bounded per run) ===
+  let refreshScanned = 0;
+  let refreshQueued = 0;
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: dueConnections } = await supabase
+    .from("asc_search_console_connections")
+    .select("site_id, user_id, last_refresh_scan_at")
+    .or(`last_refresh_scan_at.is.null,last_refresh_scan_at.lt.${sevenDaysAgo}`)
+    .limit(5); // cap GSC-werk per cron-run
+
+  for (const conn of dueConnections || []) {
+    try {
+      const result = await scanSiteForRefresh(supabase, conn.user_id, conn.site_id);
+      if (result.scanned) refreshScanned++;
+      refreshQueued += result.inserted;
+    } catch {
+      // Skip failing scans silently; next run retries.
+    }
+  }
+
   return NextResponse.json({
     message: "Cron complete",
     runsEnqueued: enqueued,
     sourcesFetched,
+    refreshScanned,
+    refreshQueued,
   });
 }

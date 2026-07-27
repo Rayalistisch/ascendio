@@ -28,7 +28,7 @@ import {
 import { publishContent as publishToIBVision } from "@/lib/ibvision";
 import { checkCredits, deductCredits, CREDIT_COSTS } from "@/lib/credits";
 import { embedText } from "@/lib/embeddings";
-import { buildEmbeddingInput, findRelatedPostsForQuery } from "@/lib/link-graph";
+import { buildEmbeddingInput, findRelatedPostsForQuery, storePostEmbedding } from "@/lib/link-graph";
 import {
   stripHtmlToPlainText,
   findTopSimilarityMatches,
@@ -1207,16 +1207,9 @@ export async function POST(request: Request) {
     }
 
     if (platform !== "ibvision") {
-      // 11. Cache the new post in asc_wp_posts (WordPress only).
-      // Embed it right away so it joins the link-graaf for future articles.
-      let newPostEmbedding: number[] | null = null;
-      try {
-        newPostEmbedding = await embedText(
-          buildEmbeddingInput(article.title, article.metaDescription)
-        );
-      } catch {
-        // Non-fatal: post is still cached, just without an embedding yet.
-      }
+      // 11. Cache the new post in asc_wp_posts (WordPress only). Kept
+      // embedding-free so this core write can never fail on an environment
+      // without the link-graaf migration.
       await supabase.from("asc_wp_posts").upsert(
         {
           user_id: userId,
@@ -1232,15 +1225,18 @@ export async function POST(request: Request) {
           status: "publish",
           last_synced_at: new Date().toISOString(),
           wp_created_at: new Date().toISOString(),
-          ...(newPostEmbedding
-            ? {
-                embedding: newPostEmbedding as unknown as string,
-                embedding_updated_at: new Date().toISOString(),
-              }
-            : {}),
         },
         { onConflict: "site_id,wp_post_id" }
       );
+
+      // Best-effort: embed the post for the link-graaf as a separate write.
+      // Fails silently if pgvector / the embedding column isn't there yet.
+      try {
+        const emb = await embedText(buildEmbeddingInput(article.title, article.metaDescription));
+        if (emb) await storePostEmbedding(supabase, siteId, Number(post.id), emb);
+      } catch {
+        // link-graaf migratie niet gedraaid of embed mislukt — geen probleem
+      }
 
       // 12. Mark run as published (WordPress — IBVision already did this above)
       await supabase

@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { KeywordInput } from "@/components/keyword-input";
-import { Plus, Trash2, Sparkles, Play, ExternalLink, Globe, Pencil, Save, X, FileEdit } from "lucide-react";
+import { Plus, Trash2, Sparkles, Play, ExternalLink, Globe, Pencil, Save, X, FileEdit, Network } from "lucide-react";
 import Link from "next/link";
 import {
   DEFAULT_GENERATION_SETTINGS,
@@ -854,6 +854,13 @@ export default function ClustersPage() {
           {sitemapScanMessage && (
             <p className="text-xs text-amber-600 max-w-xs">{sitemapScanMessage}</p>
           )}
+          <Link
+            href={siteId ? `/clusters/discover?siteId=${siteId}` : "/clusters/discover"}
+            className="inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-medium shadow-xs hover:bg-accent"
+          >
+            <Network className="h-4 w-4 mr-1.5" />
+            Bestaande structuur analyseren
+          </Link>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-xs hover:bg-primary/90">
               Cluster aanmaken

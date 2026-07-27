@@ -87,6 +87,10 @@ export default function SiteDetailPage() {
   const [testingWp, setTestingWp] = useState(false);
   const [wpTestResult, setWpTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
+  // Cache & synchronisatie
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
   // Tone of voice
   const [tone, setTone] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
@@ -318,6 +322,36 @@ export default function SiteDetailPage() {
     }
   }
 
+  async function resync(clearCache: boolean) {
+    if (
+      clearCache &&
+      !window.confirm(
+        "Cache legen en opnieuw synchroniseren? Alle gecachte posts, embeddings (link-graaf) en sitemap-URL's voor deze site worden verwijderd en opnieuw opgehaald uit WordPress."
+      )
+    ) {
+      return;
+    }
+    setSyncing(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch("/api/wp-posts/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId, clearCache }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        window.alert(data.error || "Synchroniseren mislukt");
+        return;
+      }
+      setSyncMessage(
+        `${data.synced} van ${data.total} posts gesynchroniseerd${data.cleared ? " (cache geleegd)" : ""}.`
+      );
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   async function saveToneOfVoice() {
     setSavingTone(true);
     setToneSaved(false);
@@ -448,6 +482,34 @@ export default function SiteDetailPage() {
             {testingWp ? "Testen..." : "Test verbinding"}
           </Button>
         </div>
+      </div>
+
+      {/* Cache & synchronisatie */}
+      <div className="rounded-xl border bg-card p-4 space-y-3">
+        <h2 className="font-semibold">Cache &amp; synchronisatie</h2>
+        <p className="text-sm text-muted-foreground">
+          Ascendio houdt een lokale kopie bij van je WordPress-posts (voor interne links, de
+          SEO-editor en de link-graaf). Is de site verhuisd of vervangen? Leeg de cache en haal
+          alles opnieuw op.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => resync(false)} disabled={syncing}>
+            {syncing ? "Bezig..." : "Opnieuw synchroniseren"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-destructive"
+            onClick={() => resync(true)}
+            disabled={syncing}
+          >
+            Cache legen &amp; opnieuw synchroniseren
+          </Button>
+        </div>
+        {syncMessage && <p className="text-xs text-muted-foreground">{syncMessage}</p>}
+        <p className="text-xs text-muted-foreground">
+          Na het legen: bouw de link-graaf opnieuw op via Optimaliseren → Link-graaf.
+        </p>
       </div>
 
       {/* Default template selector */}

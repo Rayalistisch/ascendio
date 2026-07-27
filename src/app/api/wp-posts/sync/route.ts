@@ -138,6 +138,14 @@ export async function POST(request: Request) {
     appPassword: decrypt(site.wp_app_password_encrypted),
   };
 
+  // Bij een verhuisde/vervangen site: eerst de oude cache legen zodat stale
+  // posts, URL's, embeddings (link-graaf) en sitemap-overlap verdwijnen.
+  const clearCache = body.clearCache === true;
+  if (clearCache) {
+    await supabase.from("asc_wp_posts").delete().eq("site_id", siteId).eq("user_id", user.id);
+    await supabase.from("asc_sitemap_urls").delete().eq("site_id", siteId).eq("user_id", user.id);
+  }
+
   try {
     const wpPosts = await fetchAllPosts(creds);
 
@@ -220,6 +228,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       synced: syncedCount,
       total: wpPosts.length,
+      cleared: clearCache,
     });
   } catch (err) {
     return NextResponse.json(

@@ -50,30 +50,35 @@ const navigationGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, siteScoped: true },
       { name: "Sites", href: "/sites", icon: Globe, siteScoped: false },
-    ],
-  },
-  {
-    label: "Content",
-    items: [
-      { name: "Planning", href: "/schedule", icon: CalendarClock, siteScoped: true },
-      { name: "Templates", href: "/templates", icon: FileText, siteScoped: true },
-      { name: "Bronnen", href: "/sources", icon: Rss, siteScoped: true },
-      { name: "Merkidentiteit", href: "/brand-identities", icon: Palette, siteScoped: false, gatedFeature: "brand_identity" },
-      { name: "Programmatic", href: "/programmatic", icon: Layers, siteScoped: true, gatedFeature: "programmatic" },
       { name: "Runs", href: "/runs", icon: History, siteScoped: true },
     ],
   },
   {
-    label: "SEO",
+    label: "Plannen",
     items: [
-      { name: "Keywords", href: "/keywords", icon: KeyRound, siteScoped: true, gatedFeature: "keyword_research" },
+      { name: "Zoekwoorden", href: "/keywords", icon: KeyRound, siteScoped: true, gatedFeature: "keyword_research" },
+      { name: "Clusters", href: "/clusters", icon: Network, siteScoped: true, gatedFeature: "clusters" },
+      { name: "Planning", href: "/schedule", icon: CalendarClock, siteScoped: true },
+      { name: "Bronnen", href: "/sources", icon: Rss, siteScoped: true },
+    ],
+  },
+  {
+    label: "Creëren",
+    items: [
+      { name: "Programmatic", href: "/programmatic", icon: Layers, siteScoped: true, gatedFeature: "programmatic" },
+      { name: "Templates", href: "/templates", icon: FileText, siteScoped: true },
+      { name: "Merkidentiteit", href: "/brand-identities", icon: Palette, siteScoped: false, gatedFeature: "brand_identity" },
       { name: "SEO Editor", href: "/seo-editor", icon: PenTool, siteScoped: true },
+    ],
+  },
+  {
+    label: "Optimaliseren",
+    items: [
       { name: "Scanner", href: "/scanner", icon: ScanSearch, siteScoped: true },
-      { name: "Indexering", href: "/indexing", icon: Search, siteScoped: true },
       { name: "Schema Audit", href: "/schema", icon: Braces, siteScoped: true },
       { name: "Link-graaf", href: "/link-graph", icon: Waypoints, siteScoped: true, gatedFeature: "link_graph" },
-      { name: "Refreshen", href: "/refresh", icon: RefreshCw, siteScoped: true, gatedFeature: "content_refresh" },
-      { name: "Clusters", href: "/clusters", icon: Network, siteScoped: true, gatedFeature: "clusters" },
+      { name: "Verversen", href: "/refresh", icon: RefreshCw, siteScoped: true, gatedFeature: "content_refresh" },
+      { name: "Indexering", href: "/indexing", icon: Search, siteScoped: true },
     ],
   },
   {

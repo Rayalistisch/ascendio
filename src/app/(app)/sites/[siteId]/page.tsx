@@ -30,6 +30,7 @@ interface SiteInfo {
   acf_content_fields: string | null;
   sitemap_url: string | null;
   is_elementor_site: boolean;
+  publish_as_draft: boolean;
 }
 
 interface PreferredDomain {
@@ -91,6 +92,11 @@ export default function SiteDetailPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
+  // Concept-modus (publiceren als draft)
+  const [publishAsDraft, setPublishAsDraft] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
+
   // Tone of voice
   const [tone, setTone] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
@@ -114,6 +120,7 @@ export default function SiteDetailPage() {
         setIsElementorSite(found?.is_elementor_site ?? false);
         setWpBaseUrl(found?.wp_base_url ?? "");
         setWpUsername(found?.wp_username ?? "");
+        setPublishAsDraft(found?.publish_as_draft ?? false);
         if (found?.tone_of_voice) {
           const tov = found.tone_of_voice;
           setTone(tov.tone || "");
@@ -319,6 +326,25 @@ export default function SiteDetailPage() {
       }
     } finally {
       setSavingWp(false);
+    }
+  }
+
+  async function savePublishAsDraft(value: boolean) {
+    setSavingDraft(true);
+    setDraftSaved(false);
+    try {
+      const res = await fetch("/api/sites", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: siteId, publishAsDraft: value }),
+      });
+      if (res.ok) {
+        setPublishAsDraft(value);
+        setDraftSaved(true);
+        setTimeout(() => setDraftSaved(false), 3000);
+      }
+    } finally {
+      setSavingDraft(false);
     }
   }
 
@@ -660,6 +686,34 @@ export default function SiteDetailPage() {
           </button>
           <span className="text-sm">{isElementorSite ? "Elementor ingeschakeld" : "Elementor uitgeschakeld"}</span>
           {elementorSaved && <span className="text-sm text-green-600">Opgeslagen!</span>}
+        </div>
+      </div>
+
+      {/* Concept-modus */}
+      <div className="rounded-xl border bg-card p-4 space-y-3">
+        <div>
+          <h2 className="font-semibold">Concept-modus</h2>
+          <p className="text-sm text-muted-foreground">
+            Zet dit aan om content eerst als <strong>concept</strong> in WordPress te plaatsen (nog
+            niet live). Je bekijkt de pagina bij Runs en publiceert hem daar met één klik zodra hij
+            goed is.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={publishAsDraft}
+            disabled={savingDraft}
+            onClick={() => savePublishAsDraft(!publishAsDraft)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${publishAsDraft ? "bg-primary" : "bg-input"}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${publishAsDraft ? "translate-x-6" : "translate-x-1"}`} />
+          </button>
+          <span className="text-sm">
+            {publishAsDraft ? "Eerst als concept plaatsen" : "Direct publiceren"}
+          </span>
+          {draftSaved && <span className="text-sm text-green-600">Opgeslagen!</span>}
         </div>
       </div>
 

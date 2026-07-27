@@ -320,6 +320,10 @@ export async function POST(request: Request) {
 
     const platform = site.platform || "wordpress";
     let language = site.default_language || "Dutch";
+    // Concept-modus: plaats als WordPress-draft i.p.v. direct live, zodat de
+    // gebruiker eerst kan controleren en daarna publiceren (WP-only).
+    const publishAsDraft = platform !== "ibvision" && Boolean(site.publish_as_draft);
+    const wpStatus: "publish" | "draft" = publishAsDraft ? "draft" : "publish";
 
     const wpAppPassword = platform === "wordpress" ? decrypt(site.wp_app_password_encrypted) : "";
     const creds = {
@@ -1147,11 +1151,11 @@ export async function POST(request: Request) {
         content: htmlContent,
         excerpt: article.metaDescription,
         featuredMediaId: media?.id,
-        status: "publish",
+        status: wpStatus,
         parent: parentPageId,
         slug,
       });
-      await logStep(supabase, runId, "info", "Pagina gepubliceerd", {
+      await logStep(supabase, runId, "info", publishAsDraft ? "Pagina als concept aangemaakt" : "Pagina gepubliceerd", {
         postId: post.id,
         postUrl: post.url,
         parentId: parentPageId,
@@ -1164,9 +1168,9 @@ export async function POST(request: Request) {
         content: htmlContent,
         excerpt: article.metaDescription,
         featuredMediaId: media?.id,
-        status: "publish",
+        status: wpStatus,
       });
-      await logStep(supabase, runId, "info", "Post gepubliceerd", {
+      await logStep(supabase, runId, "info", publishAsDraft ? "Post als concept aangemaakt" : "Post gepubliceerd", {
         postId: post.id,
         postUrl: post.url,
       });
@@ -1222,7 +1226,8 @@ export async function POST(request: Request) {
           content: htmlContent,
           meta_description: article.metaDescription,
           schema_markup: article.schemaMarkup,
-          status: "publish",
+          // Draft-posts tellen niet mee als interne-link-doel tot ze live zijn.
+          status: publishAsDraft ? "draft" : "publish",
           last_synced_at: new Date().toISOString(),
           wp_created_at: new Date().toISOString(),
         },
@@ -1238,11 +1243,11 @@ export async function POST(request: Request) {
         // link-graaf migratie niet gedraaid of embed mislukt — geen probleem
       }
 
-      // 12. Mark run as published (WordPress — IBVision already did this above)
+      // 12. Mark run as published (of 'draft' in concept-modus).
       await supabase
         .from("asc_runs")
         .update({
-          status: "published",
+          status: publishAsDraft ? "draft" : "published",
           wp_post_id: String(post.id),
           wp_post_url: post.url,
           finished_at: new Date().toISOString(),
@@ -1256,13 +1261,13 @@ export async function POST(request: Request) {
       await supabase
         .from("asc_cluster_topics")
         .update({
-          status: "published",
+          status: publishAsDraft ? "draft" : "published",
           wp_post_id: post.id,
           wp_post_url: post.url,
           run_id: runId,
         })
         .eq("id", clusterTopicId);
-      await logStep(supabase, runId, "info", "Cluster topic bijgewerkt naar published");
+      await logStep(supabase, runId, "info", publishAsDraft ? "Cluster topic bijgewerkt naar concept" : "Cluster topic bijgewerkt naar published");
     }
     if (clusterId && !clusterTopicId) {
       // This was a pillar article generation

@@ -9,7 +9,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("asc_sites")
-    .select("id, name, platform, wp_base_url, wp_username, ibvision_base_url, status, created_at, default_language, tone_of_voice, acf_content_fields, sitemap_url, is_elementor_site")
+    .select("id, name, platform, wp_base_url, wp_username, ibvision_base_url, status, created_at, default_language, tone_of_voice, acf_content_fields, sitemap_url, is_elementor_site, publish_as_draft")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -76,7 +76,7 @@ export async function PATCH(request: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { id, name, toneOfVoice, acfContentFields, sitemapUrl, isElementorSite, wpBaseUrl, wpUsername, wpAppPassword } = body;
+  const { id, name, toneOfVoice, acfContentFields, sitemapUrl, isElementorSite, publishAsDraft, wpBaseUrl, wpUsername, wpAppPassword } = body;
   if (!id) return NextResponse.json({ error: "Missing site id" }, { status: 400 });
 
   if (toneOfVoice !== undefined && toneOfVoice !== null && typeof toneOfVoice !== "object") {
@@ -89,6 +89,7 @@ export async function PATCH(request: Request) {
   if (acfContentFields !== undefined) updates.acf_content_fields = acfContentFields || null;
   if (sitemapUrl !== undefined) updates.sitemap_url = sitemapUrl || null;
   if (isElementorSite !== undefined) updates.is_elementor_site = Boolean(isElementorSite);
+  if (publishAsDraft !== undefined) updates.publish_as_draft = Boolean(publishAsDraft);
 
   // WordPress-verbinding bijwerken (bijv. als de site is verhuisd of het
   // app-wachtwoord is vernieuwd). Het wachtwoord wordt alleen overschreven als
@@ -112,7 +113,7 @@ export async function PATCH(request: Request) {
     .update(updates)
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("id, name, wp_base_url, wp_username, status, created_at, default_language, tone_of_voice, acf_content_fields, sitemap_url, is_elementor_site")
+    .select("id, name, wp_base_url, wp_username, status, created_at, default_language, tone_of_voice, acf_content_fields, sitemap_url, is_elementor_site, publish_as_draft")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

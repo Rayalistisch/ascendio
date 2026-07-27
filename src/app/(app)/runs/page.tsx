@@ -24,7 +24,7 @@ interface Run {
   id: string;
   site_id: string;
   schedule_id: string;
-  status: "queued" | "running" | "published" | "failed";
+  status: "queued" | "running" | "published" | "failed" | "draft";
   topic: string | null;
   wp_post_id: string | null;
   wp_post_url: string | null;
@@ -52,6 +52,10 @@ const STATUS_CONFIG: Record<
   published: {
     label: "Gepubliceerd",
     className: "bg-green-100 text-green-800",
+  },
+  draft: {
+    label: "Concept — controleren",
+    className: "bg-amber-100 text-amber-800",
   },
   failed: {
     label: "Mislukt",
@@ -141,6 +145,23 @@ export default function RunsPage() {
 
   function toggleExpand(runId: string) {
     setExpandedRunId((prev) => (prev === runId ? null : runId));
+  }
+
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+
+  async function publishDraft(runId: string) {
+    setPublishingId(runId);
+    try {
+      const res = await fetch(`/api/runs/${runId}/publish`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.alert(data.error || "Publiceren mislukt");
+        return;
+      }
+      await fetchRuns();
+    } finally {
+      setPublishingId(null);
+    }
   }
 
   async function cleanupRuns() {
@@ -282,6 +303,34 @@ export default function RunsPage() {
                       {/* Expanded log section */}
                       {isExpanded && (
                         <div className="border-t bg-muted/30 px-4 py-4 space-y-3">
+                          {run.status === "draft" && (
+                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
+                              <div className="text-sm text-amber-900">
+                                <span className="font-semibold">Concept — nog niet live.</span>{" "}
+                                Bekijk de pagina en publiceer als hij goed is.
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {run.wp_post_url && (
+                                  <a
+                                    href={run.wp_post_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-sm font-medium text-amber-900 hover:bg-amber-100"
+                                  >
+                                    Bekijk concept
+                                  </a>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => publishDraft(run.id)}
+                                  disabled={publishingId === run.id}
+                                  className="inline-flex h-8 items-center rounded-md bg-green-600 px-3 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"
+                                >
+                                  {publishingId === run.id ? "Publiceren…" : "Publiceren"}
+                                </button>
+                              </div>
+                            </div>
+                          )}
                           {run.error_message && (
                             <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
                               <span className="font-semibold">Fout:</span>{" "}

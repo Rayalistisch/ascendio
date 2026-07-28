@@ -9,7 +9,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("asc_sites")
-    .select("id, name, platform, wp_base_url, wp_username, ibvision_base_url, status, created_at, default_language, tone_of_voice, acf_content_fields, sitemap_url, is_elementor_site, publish_as_draft")
+    .select("id, name, platform, wp_base_url, wp_username, ibvision_base_url, status, created_at, default_language, tone_of_voice, acf_content_fields, sitemap_url, is_elementor_site, publish_as_draft, content_profile")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -113,7 +113,7 @@ export async function PATCH(request: Request) {
     .update(updates)
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("id, name, wp_base_url, wp_username, status, created_at, default_language, tone_of_voice, acf_content_fields, sitemap_url, is_elementor_site, publish_as_draft")
+    .select("id, name, wp_base_url, wp_username, status, created_at, default_language, tone_of_voice, acf_content_fields, sitemap_url, is_elementor_site, publish_as_draft, content_profile")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

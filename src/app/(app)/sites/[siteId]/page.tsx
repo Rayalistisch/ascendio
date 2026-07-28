@@ -31,6 +31,7 @@ interface SiteInfo {
   sitemap_url: string | null;
   is_elementor_site: boolean;
   publish_as_draft: boolean;
+  content_profile: { format?: string; acf?: { contentBlock?: string } } | null;
 }
 
 interface PreferredDomain {
@@ -97,6 +98,12 @@ export default function SiteDetailPage() {
   const [savingDraft, setSavingDraft] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
 
+  // Content-formaat (profiel)
+  const [profileFormat, setProfileFormat] = useState<string | null>(null);
+  const [profileDetail, setProfileDetail] = useState<string | null>(null);
+  const [reference, setReference] = useState("");
+  const [analyzingStructure, setAnalyzingStructure] = useState(false);
+
   // Tone of voice
   const [tone, setTone] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
@@ -121,6 +128,10 @@ export default function SiteDetailPage() {
         setWpBaseUrl(found?.wp_base_url ?? "");
         setWpUsername(found?.wp_username ?? "");
         setPublishAsDraft(found?.publish_as_draft ?? false);
+        if (found?.content_profile?.format) {
+          setProfileFormat(found.content_profile.format);
+          setProfileDetail(found.content_profile.acf?.contentBlock ?? null);
+        }
         if (found?.tone_of_voice) {
           const tov = found.tone_of_voice;
           setTone(tov.tone || "");
@@ -353,6 +364,34 @@ export default function SiteDetailPage() {
     }
   }
 
+  function formatLabel(fmt: string | null): string {
+    if (fmt === "acf") return "ACF-blokken";
+    if (fmt === "gutenberg") return "Standaard Gutenberg-blokken";
+    if (fmt === "classic") return "Klassieke HTML";
+    return "Nog niet ingesteld";
+  }
+
+  async function analyzeStructure() {
+    if (!reference.trim()) return;
+    setAnalyzingStructure(true);
+    try {
+      const res = await fetch("/api/sites/analyze-structure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId, reference }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        window.alert(data.error || "Analyse mislukt");
+        return;
+      }
+      setProfileFormat(data.profile?.format ?? null);
+      setProfileDetail(data.profile?.acf?.contentBlock ?? null);
+    } finally {
+      setAnalyzingStructure(false);
+    }
+  }
+
   async function savePublishAsDraft(value: boolean) {
     setSavingDraft(true);
     setDraftSaved(false);
@@ -559,6 +598,39 @@ export default function SiteDetailPage() {
         {syncMessage && <p className="text-xs text-muted-foreground">{syncMessage}</p>}
         <p className="text-xs text-muted-foreground">
           Na het legen: bouw de link-graaf opnieuw op via Optimaliseren → Link-graaf.
+        </p>
+      </div>
+
+      {/* Content-formaat */}
+      <div className="rounded-xl border bg-card p-4 space-y-3">
+        <div>
+          <h2 className="font-semibold">Content-formaat</h2>
+          <p className="text-sm text-muted-foreground">
+            Wijs een bestaande, goed opgebouwde pagina aan. Ascendio leest hoe die is opgebouwd
+            (ACF-blokken, Gutenberg of klassieke HTML) en publiceert nieuwe content in datzelfde
+            formaat — zodat de opmaak van je thema intact blijft.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Huidig formaat:</span>
+          <span className="font-medium">{formatLabel(profileFormat)}</span>
+          {profileDetail && <Badge variant="secondary" className="text-xs">{profileDetail}</Badge>}
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            value={reference}
+            onChange={(e) => setReference(e.target.value)}
+            placeholder="URL of post-ID van een goede pagina (bijv. 611)"
+            className="flex-1"
+          />
+          <Button onClick={analyzeStructure} disabled={analyzingStructure || !reference.trim()} size="sm">
+            {analyzingStructure ? "Analyseren..." : "Analyseer opbouw"}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Tip: pak een pagina die er precies goed uitziet. Detecteert Ascendio &quot;Klassieke
+          HTML&quot; terwijl je thema wél blokken gebruikt? Kies dan een pagina die met de
+          block-editor is gemaakt.
         </p>
       </div>
 

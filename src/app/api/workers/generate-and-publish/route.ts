@@ -29,6 +29,7 @@ import { publishContent as publishToIBVision } from "@/lib/ibvision";
 import { checkCredits, deductCredits, CREDIT_COSTS } from "@/lib/credits";
 import { embedText } from "@/lib/embeddings";
 import { buildEmbeddingInput, findRelatedPostsForQuery, storePostEmbedding } from "@/lib/link-graph";
+import { serializeToProfile, type ContentProfile } from "@/lib/content-profile";
 import {
   stripHtmlToPlainText,
   findTopSimilarityMatches,
@@ -1091,6 +1092,35 @@ export async function POST(request: Request) {
     const effectiveContentType = contentType || "posts";
     let post: { id: number | string; url: string };
 
+    // Content-profiel: maak de HTML op in het formaat van dit thema (ACF-blokken
+    // / Gutenberg), gedetecteerd uit een referentiepagina. Zonder profiel of bij
+    // 'classic' blijft het platte HTML. WordPress-only.
+    let publishHtml = htmlContent;
+    const contentProfile = (site.content_profile as ContentProfile | null) ?? null;
+    if (platform !== "ibvision" && contentProfile && contentProfile.format !== "classic") {
+      try {
+        publishHtml = serializeToProfile(contentProfile, {
+          title: article.title,
+          bodyHtml: htmlContent,
+          intro: article.metaDescription,
+          featuredImageId: media?.id ?? null,
+        });
+        await logStep(
+          supabase,
+          runId,
+          "info",
+          `Content opgemaakt in ${contentProfile.format}-formaat (thema-profiel)`
+        );
+      } catch (e) {
+        await logStep(
+          supabase,
+          runId,
+          "warn",
+          "Content-profiel overgeslagen: " + (e instanceof Error ? e.message : "onbekend")
+        );
+      }
+    }
+
     if (platform === "ibvision") {
       // IBVision publish
       const ibCreds = {
@@ -1148,7 +1178,7 @@ export async function POST(request: Request) {
       await logStep(supabase, runId, "info", "Pagina publiceren op WordPress...");
       post = await createPage(creds, {
         title: article.title,
-        content: htmlContent,
+        content: publishHtml,
         excerpt: article.metaDescription,
         featuredMediaId: media?.id,
         status: wpStatus,
@@ -1165,7 +1195,7 @@ export async function POST(request: Request) {
       await logStep(supabase, runId, "info", "Post publiceren op WordPress...");
       post = await createPost(creds, {
         title: article.title,
-        content: htmlContent,
+        content: publishHtml,
         excerpt: article.metaDescription,
         featuredMediaId: media?.id,
         status: wpStatus,

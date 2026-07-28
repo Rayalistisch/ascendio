@@ -273,6 +273,32 @@ export async function fetchPage(
   return fetchItemByCollection(creds, "pages", pageId, options);
 }
 
+/**
+ * Fetch the RAW post_content (context=edit) — the editable source, not the
+ * theme-rendered HTML. Essential for safe edits: writing rendered HTML back
+ * would double-wrap theme markup and break the layout. Tries posts, then pages.
+ */
+export async function fetchPostRawContent(
+  creds: WPCredentials,
+  wpPostId: number
+): Promise<{ raw: string; collection: WPCollection } | null> {
+  for (const collection of ["posts", "pages"] as const) {
+    try {
+      const res = await fetch(
+        wpApiUrl(creds, `/${collection}/${wpPostId}?context=edit&_fields=id,content`),
+        { headers: { Authorization: authHeader(creds), "Content-Type": "application/json" } }
+      );
+      if (!res.ok) continue;
+      const json = await res.json();
+      const raw = json?.content?.raw;
+      if (typeof raw === "string" && raw.trim()) return { raw, collection };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 async function fetchBySlugFromCollection(
   creds: WPCredentials,
   collection: "posts" | "pages",

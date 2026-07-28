@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyQStashSignature } from "@/lib/qstash";
 import { insertInternalLinks } from "@/lib/openai";
+import { fetchPostRawContent } from "@/lib/wordpress";
+import { decrypt } from "@/lib/encryption";
 import { checkCredits, deductCredits, CREDIT_COSTS } from "@/lib/credits";
 
 export const maxDuration = 120;
@@ -41,21 +43,20 @@ export async function POST(request: Request) {
   const creditCheck = await checkCredits(supabase, userId, CREDIT_COSTS.interlink);
   if (!creditCheck.enough) return fail("Onvoldoende credits");
 
-  // Huidige content van de pagina uit de cache.
+  // Elementor-detectie uit de cache.
   const { data: post } = await supabase
     .from("asc_wp_posts")
-    .select("content, is_elementor")
+    .select("is_elementor")
     .eq("site_id", siteId)
     .eq("wp_post_id", proposal.wp_post_id)
     .maybeSingle();
-  const html = post?.content;
-  if (!html || !html.trim()) return fail("Geen content voor deze pagina in de cache");
 
-  const { data: siteInfo } = await supabase
+  const { data: siteRow } = await supabase
     .from("asc_sites")
-    .select("default_language, is_elementor_site, acf_content_fields")
+    .select("default_language, is_elementor_site, acf_content_fields, wp_base_url, wp_username, wp_app_password_encrypted")
     .eq("id", siteId)
     .maybeSingle();
+  const siteInfo = siteRow;
 
   // Guard: bij Elementor/ACF-pagina's zit de zichtbare content niet in
   // post_content. Terugschrijven zou de builder-opmaak (footer/styling) slopen,
@@ -72,6 +73,20 @@ export async function POST(request: Request) {
       .eq("id", proposalId);
     return NextResponse.json({ ok: false, skipped: "elementor_or_acf" });
   }
+
+  if (!siteInfo?.wp_app_password_encrypted) return fail("WordPress-gegevens ontbreken");
+
+  // Haal de RUWE bron-content live op (nooit de gerenderde HTML terugschrijven).
+  const creds = {
+    baseUrl: siteInfo.wp_base_url,
+    username: siteInfo.wp_username,
+    appPassword: decrypt(siteInfo.wp_app_password_encrypted),
+  };
+  const rawResult = await fetchPostRawContent(creds, proposal.wp_post_id);
+  if (!rawResult || !rawResult.raw.trim()) {
+    return fail("Kon de brontekst van deze pagina niet ophalen");
+  }
+  const html = rawResult.raw;
 
   const targets: { url: string; title: string }[] = [];
 

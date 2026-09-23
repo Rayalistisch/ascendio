@@ -91,13 +91,8 @@ export default function SiteDetailPage() {
   const [testingWp, setTestingWp] = useState(false);
   const [wpTestResult, setWpTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-  // Shopify-verbinding
+  // Shopify-verbinding (OAuth — token wordt server-side beheerd)
   const [shopifyShopDomain, setShopifyShopDomain] = useState("");
-  const [shopifyAccessToken, setShopifyAccessToken] = useState("");
-  const [savingShopify, setSavingShopify] = useState(false);
-  const [shopifySaved, setShopifySaved] = useState(false);
-  const [testingShopify, setTestingShopify] = useState(false);
-  const [shopifyTestResult, setShopifyTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   // Cache & synchronisatie
   const [syncing, setSyncing] = useState(false);
@@ -351,54 +346,9 @@ export default function SiteDetailPage() {
     }
   }
 
-  async function testShopifyConnection() {
-    setTestingShopify(true);
-    setShopifyTestResult(null);
-    try {
-      const res = await fetch("/api/sites/test-connection", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform: "shopify", shopifyShopDomain, shopifyAccessToken }),
-      });
-      const data = await res.json();
-      setShopifyTestResult(
-        data.success
-          ? { ok: true, message: `Verbinding gelukt ✓${data.displayName ? ` — ${data.displayName}` : ""}` }
-          : { ok: false, message: data.error || "Verbinding mislukt" }
-      );
-    } catch {
-      setShopifyTestResult({ ok: false, message: "Kon de verbinding niet testen" });
-    } finally {
-      setTestingShopify(false);
-    }
-  }
-
-  async function saveShopifyConnection() {
-    setSavingShopify(true);
-    setShopifySaved(false);
-    try {
-      const res = await fetch("/api/sites", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: siteId,
-          shopifyShopDomain,
-          // Alleen meesturen als ingevuld — leeg = huidig token behouden.
-          ...(shopifyAccessToken.trim() ? { shopifyAccessToken } : {}),
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        if (data.site) setSite(data.site);
-        setShopifyAccessToken("");
-        setShopifySaved(true);
-        setTimeout(() => setShopifySaved(false), 3000);
-      } else {
-        window.alert(data.error || "Opslaan mislukt");
-      }
-    } finally {
-      setSavingShopify(false);
-    }
+  function reconnectShopify() {
+    const q = new URLSearchParams({ shop: shopifyShopDomain.trim(), name: site?.name || "" });
+    window.location.href = `/api/shopify/oauth/start?${q.toString()}`;
   }
 
   const [deleting, setDeleting] = useState(false);
@@ -646,8 +596,9 @@ export default function SiteDetailPage() {
       <div className="rounded-xl border bg-card p-4 space-y-3">
         <h2 className="font-semibold">Shopify-verbinding</h2>
         <p className="text-sm text-muted-foreground">
-          Werk het winkeldomein of access token bij als de app opnieuw is aangemaakt of het token
-          is vernieuwd. Historie en instellingen blijven behouden.
+          Verbonden met <span className="font-mono">{shopifyShopDomain}</span> via OAuth. Verloopt
+          de toegang of heb je opnieuw geïnstalleerd? Verbind dan opnieuw — je logt kort in bij
+          Shopify en komt automatisch terug.
         </p>
         <div className="space-y-1.5">
           <Label className="text-xs">Winkeldomein</Label>
@@ -657,37 +608,9 @@ export default function SiteDetailPage() {
             placeholder="mijnwinkel.myshopify.com"
           />
         </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Admin API access token</Label>
-          <Input
-            type="password"
-            value={shopifyAccessToken}
-            onChange={(e) => setShopifyAccessToken(e.target.value)}
-            placeholder="Laat leeg om het huidige token te behouden"
-            autoComplete="new-password"
-          />
-          <p className="text-xs text-muted-foreground">
-            Aan te maken in Shopify onder Instellingen → Apps en verkoopkanalen → Apps ontwikkelen
-            (recht <code>write_content</code>).
-          </p>
-        </div>
-        {shopifyTestResult && (
-          <p className={`text-xs ${shopifyTestResult.ok ? "text-green-600" : "text-destructive"}`}>
-            {shopifyTestResult.message}
-          </p>
-        )}
         <div className="flex items-center gap-2">
-          <Button onClick={saveShopifyConnection} disabled={savingShopify} size="sm">
-            {savingShopify ? "Opslaan..." : shopifySaved ? "Opgeslagen ✓" : "Verbinding opslaan"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={testShopifyConnection}
-            disabled={testingShopify || !shopifyAccessToken.trim()}
-            title={!shopifyAccessToken.trim() ? "Vul een access token in om te testen" : undefined}
-          >
-            {testingShopify ? "Testen..." : "Test verbinding"}
+          <Button onClick={reconnectShopify} disabled={!shopifyShopDomain.trim()} size="sm">
+            Opnieuw verbinden met Shopify
           </Button>
         </div>
       </div>

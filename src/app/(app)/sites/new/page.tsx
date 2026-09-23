@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -22,9 +22,8 @@ export default function NewSitePage() {
   const [ibvisionApiKey, setIbvisionApiKey] = useState("");
   const [ibvisionUrlPrefix, setIbvisionUrlPrefix] = useState("/");
 
-  // Shopify fields
+  // Shopify fields (OAuth — geen token invoeren)
   const [shopifyShopDomain, setShopifyShopDomain] = useState("");
-  const [shopifyAccessToken, setShopifyAccessToken] = useState("");
 
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<{
@@ -35,16 +34,26 @@ export default function NewSitePage() {
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // OAuth-fouten die via de callback terugkomen (?error=...) tonen.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const err = p.get("error");
+    if (err) {
+      setPlatform("shopify");
+      setSaveError(err);
+    }
+  }, []);
+
   const canTest = platform === "wordpress"
     ? !!(wpBaseUrl && wpUsername && wpAppPassword)
-    : platform === "shopify"
-    ? !!(shopifyShopDomain && shopifyAccessToken)
-    : !!(ibvisionBaseUrl && ibvisionApiKey);
+    : platform === "ibvision"
+    ? !!(ibvisionBaseUrl && ibvisionApiKey)
+    : false; // Shopify gebruikt OAuth, geen vooraf-test
 
   const canSave = platform === "wordpress"
     ? !!(name && wpBaseUrl && wpUsername && wpAppPassword)
     : platform === "shopify"
-    ? !!(name && shopifyShopDomain && shopifyAccessToken)
+    ? !!(name && shopifyShopDomain)
     : !!(name && ibvisionBaseUrl && ibvisionApiKey);
 
   async function handleTestConnection() {
@@ -63,19 +72,6 @@ export default function NewSitePage() {
         setTestResult({
           success: data.success,
           message: data.success ? "IBVision verbinding geslaagd" : (data.error || "Verbinding mislukt. Controleer URL en API key."),
-        });
-      } else if (platform === "shopify") {
-        const res = await fetch("/api/sites/test-connection", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ platform: "shopify", shopifyShopDomain, shopifyAccessToken }),
-        });
-        const data = await res.json();
-        setTestResult({
-          success: data.success,
-          message: data.success
-            ? `Verbinding geslaagd${data.displayName ? ` — ${data.displayName}` : ""}`
-            : (data.error || "Verbinding mislukt. Controleer winkeldomein en access token."),
         });
       } else {
         const res = await fetch("/api/sites/test-connection", {
@@ -105,6 +101,15 @@ export default function NewSitePage() {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+
+    // Shopify koppelt via OAuth: stuur de gebruiker naar het autorisatiescherm.
+    if (platform === "shopify") {
+      setSaveError(null);
+      const q = new URLSearchParams({ shop: shopifyShopDomain.trim(), name: name.trim() });
+      window.location.href = `/api/shopify/oauth/start?${q.toString()}`;
+      return;
+    }
+
     setSaveLoading(true);
     setSaveError(null);
 
@@ -115,8 +120,6 @@ export default function NewSitePage() {
         body: JSON.stringify(
           platform === "ibvision"
             ? { name, platform, ibvisionBaseUrl, ibvisionApiKey, ibvisionUrlPrefix }
-            : platform === "shopify"
-            ? { name, platform, shopifyShopDomain, shopifyAccessToken }
             : { name, platform, wpBaseUrl, wpUsername, wpAppPassword }
         ),
       });
@@ -339,30 +342,16 @@ export default function NewSitePage() {
               </p>
             </div>
 
-            <div className="space-y-2">
-              <label htmlFor="shopifyAccessToken" className="text-sm font-medium leading-none">
-                Admin API access token
-              </label>
-              <input
-                id="shopifyAccessToken"
-                type="password"
-                value={shopifyAccessToken}
-                onChange={(e) => setShopifyAccessToken(e.target.value)}
-                placeholder="shpat_..."
-                required
-                className={INPUT_CLASS}
-              />
-              <p className="text-xs text-muted-foreground">
-                Maak in Shopify een custom app aan via Instellingen &rarr; Apps en
-                verkoopkanalen &rarr; Apps ontwikkelen. Geef die het recht{" "}
-                <code>write_content</code>, installeer de app en kopieer het Admin API
-                access token.
-              </p>
+            <div className="rounded-lg border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+              Je logt zo in bij Shopify en geeft Ascendio toestemming om pagina&apos;s en
+              blogartikelen te beheren. Je hoeft geen token te kopiëren — na het inloggen kom
+              je automatisch terug.
             </div>
           </>
         )}
 
-        {/* Test connection */}
+        {/* Test connection (niet voor Shopify — dat gaat via OAuth) */}
+        {platform !== "shopify" && (
         <div className="space-y-3">
           <button
             type="button"
@@ -385,6 +374,7 @@ export default function NewSitePage() {
             </div>
           )}
         </div>
+        )}
 
         {/* Save error */}
         {saveError && (
@@ -400,7 +390,9 @@ export default function NewSitePage() {
             disabled={!canSave || saveLoading}
             className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
           >
-            {saveLoading ? "Opslaan..." : "Site opslaan"}
+            {platform === "shopify"
+              ? "Verbind met Shopify"
+              : saveLoading ? "Opslaan..." : "Site opslaan"}
           </button>
           <Link
             href="/sites"

@@ -4,6 +4,7 @@ import { encrypt } from "@/lib/encryption";
 import { normalizeShopDomain, testConnection } from "@/lib/shopify";
 import {
   exchangeShopifyCode,
+  isValidShopDomain,
   verifyShopifyHmac,
   verifyShopifyOAuthState,
 } from "@/lib/shopify-oauth";
@@ -39,9 +40,11 @@ export async function GET(request: Request) {
     return errorRedirect(request, "Ongeldige of verlopen OAuth-state.");
   }
 
+  // Het door Shopify teruggegeven (HMAC-geverifieerde) winkeldomein is leidend —
+  // dat is de winkel die de gebruiker daadwerkelijk heeft geautoriseerd.
   const shop = normalizeShopDomain(shopParam);
-  if (shop !== statePayload.shop) {
-    return errorRedirect(request, "Winkel komt niet overeen met de aanvraag.");
+  if (!isValidShopDomain(shop)) {
+    return errorRedirect(request, "Ongeldig winkeldomein ontvangen van Shopify.");
   }
 
   // 3. Controleer de ingelogde gebruiker.

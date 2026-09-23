@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { testConnection } from "@/lib/wordpress";
+import { testConnection as testShopifyConnection } from "@/lib/shopify";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -8,7 +9,19 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { platform, wpBaseUrl, wpUsername, wpAppPassword, ibvisionBaseUrl, ibvisionApiKey } = body;
+  const { platform, wpBaseUrl, wpUsername, wpAppPassword, ibvisionBaseUrl, ibvisionApiKey, shopifyShopDomain, shopifyAccessToken } = body;
+
+  if (platform === "shopify") {
+    if (!shopifyShopDomain || !shopifyAccessToken) {
+      return NextResponse.json({ error: "Shopify winkeldomein en access token zijn verplicht" }, { status: 400 });
+    }
+    const result = await testShopifyConnection({ shopDomain: shopifyShopDomain, accessToken: shopifyAccessToken });
+    return NextResponse.json(
+      result.success
+        ? { success: true, displayName: result.shopName }
+        : { success: false, error: result.error }
+    );
+  }
 
   if (platform === "ibvision") {
     if (!ibvisionBaseUrl || !ibvisionApiKey) {

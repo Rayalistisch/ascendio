@@ -123,7 +123,7 @@ export default function SiteDetailPage() {
   useEffect(() => {
     async function loadSite() {
       try {
-        const res = await fetch("/api/sites");
+        const res = await fetch("/api/sites", { cache: "no-store" });
         const data = await res.json();
         const found = (data.sites ?? []).find((s: SiteInfo) => s.id === siteId);
         setSite(found || null);

@@ -3,6 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { encrypt } from "@/lib/encryption";
 import { normalizeShopDomain } from "@/lib/shopify";
 
+// Nooit cachen: de lijst moet direct nieuwe/gewijzigde sites tonen.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

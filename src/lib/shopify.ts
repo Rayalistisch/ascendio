@@ -229,6 +229,110 @@ export async function createPage(
 }
 
 // ---------------------------------------------------------------------------
+// Reading existing store content (for SEO strategy, internal links, style)
+// ---------------------------------------------------------------------------
+
+export interface ShopifyContentItem {
+  id: number;
+  title: string;
+  slug: string;
+  url: string;
+  content: string;
+  excerpt: string;
+  status: "publish" | "draft";
+  createdAt: string | null;
+  modifiedAt: string | null;
+}
+
+/** Extract the page_info cursor from a Shopify Link header (rel="next"). */
+function nextPageInfo(linkHeader: string | null): string | null {
+  if (!linkHeader) return null;
+  const match = linkHeader.split(",").find((p) => p.includes('rel="next"'));
+  if (!match) return null;
+  const url = match.match(/<([^>]+)>/)?.[1];
+  if (!url) return null;
+  try {
+    return new URL(url).searchParams.get("page_info");
+  } catch {
+    return null;
+  }
+}
+
+/** Fetch every item of a REST collection, following cursor pagination. */
+async function fetchAllPaginated(
+  creds: ShopifyCredentials,
+  basePath: string,
+  collectionKey: string
+): Promise<Record<string, unknown>[]> {
+  const items: Record<string, unknown>[] = [];
+  let pageInfo: string | null = null;
+  // Hard cap to avoid runaway loops on very large stores.
+  for (let page = 0; page < 40; page += 1) {
+    const sep = basePath.includes("?") ? "&" : "?";
+    const path = pageInfo
+      ? `${basePath}${sep}limit=250&page_info=${encodeURIComponent(pageInfo)}`
+      : `${basePath}${sep}limit=250`;
+    const res = await fetch(apiUrl(creds, path), { headers: authHeaders(creds) });
+    if (!res.ok) {
+      throw new Error(`Shopify content ophalen mislukt: ${res.status} ${await res.text()}`);
+    }
+    const data = await res.json();
+    const batch: Record<string, unknown>[] = data?.[collectionKey] ?? [];
+    items.push(...batch);
+    pageInfo = nextPageInfo(res.headers.get("link"));
+    if (!pageInfo || batch.length === 0) break;
+  }
+  return items;
+}
+
+function toContentItem(
+  raw: Record<string, unknown>,
+  urlBuilder: (handle: string) => string
+): ShopifyContentItem {
+  const handle = String(raw.handle || "");
+  const published = raw.published_at != null;
+  return {
+    id: Number(raw.id),
+    title: String(raw.title || ""),
+    slug: handle,
+    url: urlBuilder(handle),
+    content: String(raw.body_html || ""),
+    excerpt: String(raw.summary_html || ""),
+    status: published ? "publish" : "draft",
+    createdAt: (raw.created_at as string) || null,
+    modifiedAt: (raw.updated_at as string) || null,
+  };
+}
+
+export async function fetchAllArticles(creds: ShopifyCredentials): Promise<ShopifyContentItem[]> {
+  const domain = normalizeShopDomain(creds.shopDomain);
+  const blogs = (await fetchAllPaginated(creds, "/blogs.json", "blogs")) as unknown as {
+    id: number;
+    handle: string;
+  }[];
+  const all: ShopifyContentItem[] = [];
+  for (const blog of blogs) {
+    const raws = await fetchAllPaginated(creds, `/blogs/${blog.id}/articles.json?published_status=any`, "articles");
+    for (const raw of raws) {
+      all.push(toContentItem(raw, (h) => `https://${domain}/blogs/${blog.handle}/${h}`));
+    }
+  }
+  return all;
+}
+
+export async function fetchAllPages(creds: ShopifyCredentials): Promise<ShopifyContentItem[]> {
+  const domain = normalizeShopDomain(creds.shopDomain);
+  const raws = await fetchAllPaginated(creds, "/pages.json?published_status=any", "pages");
+  return raws.map((raw) => toContentItem(raw, (h) => `https://${domain}/pages/${h}`));
+}
+
+/** All blog articles + online-store pages of the store. */
+export async function fetchAllSiteContent(creds: ShopifyCredentials): Promise<ShopifyContentItem[]> {
+  const [articles, pages] = await Promise.all([fetchAllArticles(creds), fetchAllPages(creds)]);
+  return [...articles, ...pages];
+}
+
+// ---------------------------------------------------------------------------
 // Draft → live (flip a previously created draft to published)
 // ---------------------------------------------------------------------------
 

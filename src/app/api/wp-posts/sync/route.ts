@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllPosts } from "@/lib/wordpress";
+import { fetchAllSiteContent as fetchAllShopifyContent } from "@/lib/shopify";
 import { decrypt } from "@/lib/encryption";
 
 // ── Elementor helpers ─────────────────────────────────────────
@@ -132,11 +133,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Site not found" }, { status: 404 });
   }
 
-  const creds = {
-    baseUrl: site.wp_base_url,
-    username: site.wp_username,
-    appPassword: decrypt(site.wp_app_password_encrypted),
-  };
+  const platform = site.platform || "wordpress";
 
   // Bij een verhuisde/vervangen site: eerst de oude cache legen zodat stale
   // posts, URL's, embeddings (link-graaf) en sitemap-overlap verdwijnen.
@@ -145,6 +142,54 @@ export async function POST(request: Request) {
     await supabase.from("asc_wp_posts").delete().eq("site_id", siteId).eq("user_id", user.id);
     await supabase.from("asc_sitemap_urls").delete().eq("site_id", siteId).eq("user_id", user.id);
   }
+
+  // Shopify: haal bestaande artikelen + pagina's op en cache ze in asc_wp_posts,
+  // zodat interne links, uniqueness-check en schrijfstijl-analyse werken.
+  if (platform === "shopify") {
+    if (!site.shopify_access_token_encrypted) {
+      return NextResponse.json({ error: "Shopify-gegevens ontbreken" }, { status: 400 });
+    }
+    try {
+      const items = await fetchAllShopifyContent({
+        shopDomain: site.shopify_shop_domain,
+        accessToken: decrypt(site.shopify_access_token_encrypted),
+        blogId: site.shopify_blog_id ?? null,
+      });
+      let syncedCount = 0;
+      for (const item of items) {
+        const { error: upsertError } = await supabase.from("asc_wp_posts").upsert(
+          {
+            user_id: user.id,
+            site_id: siteId,
+            wp_post_id: item.id,
+            title: item.title,
+            slug: item.slug,
+            url: item.url,
+            excerpt: item.excerpt,
+            content: item.content,
+            status: item.status,
+            last_synced_at: new Date().toISOString(),
+            wp_created_at: item.createdAt,
+            wp_modified_at: item.modifiedAt,
+          },
+          { onConflict: "site_id,wp_post_id" }
+        );
+        if (!upsertError) syncedCount++;
+      }
+      return NextResponse.json({ synced: syncedCount, total: items.length, cleared: clearCache });
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Synchroniseren met Shopify mislukt" },
+        { status: 500 }
+      );
+    }
+  }
+
+  const creds = {
+    baseUrl: site.wp_base_url,
+    username: site.wp_username,
+    appPassword: decrypt(site.wp_app_password_encrypted),
+  };
 
   try {
     const wpPosts = await fetchAllPosts(creds);

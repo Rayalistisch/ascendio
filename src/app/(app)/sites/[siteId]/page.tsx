@@ -617,13 +617,13 @@ export default function SiteDetailPage() {
       )}
 
       {/* Cache & synchronisatie */}
-      {isWordPress && (
+      {(isWordPress || isShopify) && (
       <div className="rounded-xl border bg-card p-4 space-y-3">
-        <h2 className="font-semibold">Cache &amp; synchronisatie</h2>
+        <h2 className="font-semibold">Content synchroniseren</h2>
         <p className="text-sm text-muted-foreground">
-          Ascendio houdt een lokale kopie bij van je WordPress-posts (voor interne links, de
-          SEO-editor en de link-graaf). Is de site verhuisd of vervangen? Leeg de cache en haal
-          alles opnieuw op.
+          {isShopify
+            ? "Haal je bestaande Shopify-pagina's en blogartikelen op. Ascendio gebruikt die voor interne links, de uniqueness-check en het analyseren van je schrijfstijl. Draai dit één keer na het koppelen (en opnieuw als je veel nieuwe content hebt toegevoegd)."
+            : "Ascendio houdt een lokale kopie bij van je WordPress-posts (voor interne links, de SEO-editor en de link-graaf). Is de site verhuisd of vervangen? Leeg de cache en haal alles opnieuw op."}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" variant="outline" onClick={() => resync(false)} disabled={syncing}>

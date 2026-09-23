@@ -26,6 +26,10 @@ import {
   enqueueIndexingJob,
 } from "@/lib/qstash";
 import { publishContent as publishToIBVision } from "@/lib/ibvision";
+import {
+  createArticle as createShopifyArticle,
+  createPage as createShopifyPage,
+} from "@/lib/shopify";
 import { checkCredits, deductCredits, CREDIT_COSTS } from "@/lib/credits";
 import { embedText } from "@/lib/embeddings";
 import { buildEmbeddingInput, findRelatedPostsForQuery, storePostEmbedding } from "@/lib/link-graph";
@@ -358,7 +362,7 @@ export async function POST(request: Request) {
       await logStep(supabase, runId, "info", `${existingPosts.length} interne link-kandidaten uit cache geladen`);
 
       // Bootstrap a small sync only when cache is too small (WordPress only).
-      if (platform !== "ibvision" && existingPosts.length < MIN_CACHED_POSTS_FOR_LINKING) {
+      if (platform === "wordpress" && existingPosts.length < MIN_CACHED_POSTS_FOR_LINKING) {
         await logStep(supabase, runId, "info", "Cache beperkt, beperkte WP sync uitvoeren...");
         const wpPosts = await fetchAllPosts(creds, {
           fields: ["id", "title", "slug", "link", "excerpt", "status", "date", "modified"],
@@ -890,6 +894,10 @@ export async function POST(request: Request) {
         .replace(/^-|-$/g, "");
     const filename = `${slug}-featured.png`;
     let media: { id: number; url: string } | null = null;
+    // Shopify heeft geen losse media-endpoint: de uitgelichte afbeelding gaat
+    // als base64-attachment mee op het artikel zelf.
+    let shopifyFeaturedImageBase64: string | null = null;
+    let shopifyFeaturedAlt = "";
 
     if (platform === "ibvision") {
       await logStep(supabase, runId, "info", "Afbeeldingen overgeslagen (IBVision heeft geen media upload)");
@@ -908,11 +916,17 @@ export async function POST(request: Request) {
             "Featured image alt text"
           ),
         ]);
-        media = await uploadMedia(creds, imageBuffer, filename);
-        await updateMedia(creds, media.id, { alt_text: featuredAltText });
-        await logStep(supabase, runId, "info", "Uitgelichte afbeelding geüpload", {
-          mediaId: media.id,
-        });
+        if (platform === "shopify") {
+          shopifyFeaturedImageBase64 = imageBuffer.toString("base64");
+          shopifyFeaturedAlt = featuredAltText;
+          await logStep(supabase, runId, "info", "Uitgelichte afbeelding gegenereerd (wordt bij het artikel geplaatst)");
+        } else {
+          media = await uploadMedia(creds, imageBuffer, filename);
+          await updateMedia(creds, media.id, { alt_text: featuredAltText });
+          await logStep(supabase, runId, "info", "Uitgelichte afbeelding geüpload", {
+            mediaId: media.id,
+          });
+        }
       } catch (featuredErr) {
         await logStep(
           supabase,
@@ -935,9 +949,12 @@ export async function POST(request: Request) {
 
     // 6. Replace image markers with in-article images (WordPress only)
     let htmlContent = article.htmlContent;
-    let imagesCount = media ? 1 : 0;
+    let imagesCount = (media || shopifyFeaturedImageBase64) ? 1 : 0;
     const imageResults: Array<{ marker: string; html: string }> = [];
-    const markersToProcess = platform !== "ibvision" && hasTime(MIN_TIME_FOR_INLINE_IMAGES_MS)
+    // Inline (in-article) afbeeldingen: alleen WordPress — Shopify heeft geen
+    // media-endpoint om ze los te hosten, dus die markers worden hieronder
+    // simpelweg verwijderd.
+    const markersToProcess = platform === "wordpress" && hasTime(MIN_TIME_FOR_INLINE_IMAGES_MS)
       ? article.imageMarkers.slice(0, maxInlineImagesRequested)
       : [];
 
@@ -1152,6 +1169,39 @@ export async function POST(request: Request) {
         })
         .eq("id", runId)
         .eq("user_id", userId);
+    } else if (platform === "shopify") {
+      // Shopify publish (blog article or online-store page)
+      const shopifyCreds = {
+        shopDomain: site.shopify_shop_domain!,
+        accessToken: decrypt(site.shopify_access_token_encrypted!),
+        blogId: site.shopify_blog_id ?? null,
+      };
+      if (effectiveContentType === "pages") {
+        await logStep(supabase, runId, "info", "Pagina publiceren op Shopify...");
+        const result = await createShopifyPage(shopifyCreds, {
+          title: article.title,
+          bodyHtml: publishHtml,
+          published: !publishAsDraft,
+          slug,
+        });
+        post = { id: result.id, url: result.url };
+      } else {
+        await logStep(supabase, runId, "info", "Artikel publiceren op Shopify...");
+        const result = await createShopifyArticle(shopifyCreds, {
+          title: article.title,
+          bodyHtml: publishHtml,
+          summaryHtml: article.metaDescription,
+          published: !publishAsDraft,
+          slug,
+          imageAttachmentBase64: shopifyFeaturedImageBase64,
+          imageAlt: shopifyFeaturedAlt,
+        });
+        post = { id: result.id, url: result.url };
+      }
+      await logStep(supabase, runId, "info", publishAsDraft ? "Op Shopify aangemaakt als concept" : "Gepubliceerd op Shopify", {
+        postId: post.id,
+        postUrl: post.url,
+      });
     } else if (effectiveContentType === "pages") {
       // WordPress page publish
       let parentPageId: number | undefined;

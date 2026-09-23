@@ -20,18 +20,35 @@ export default async function SitesPage() {
 
   const { data: sites } = await supabase
     .from("asc_sites")
-    .select("id, name, wp_base_url, wp_username, status, created_at")
+    .select("id, name, platform, wp_base_url, wp_username, ibvision_base_url, shopify_shop_domain, status, created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
   const siteList = (sites ?? []) as Array<{
     id: string;
     name: string;
-    wp_base_url: string;
-    wp_username: string;
+    platform: string | null;
+    wp_base_url: string | null;
+    wp_username: string | null;
+    ibvision_base_url: string | null;
+    shopify_shop_domain: string | null;
     status: string;
     created_at: string;
   }>;
+
+  const PLATFORM_LABELS: Record<string, string> = {
+    wordpress: "WordPress",
+    shopify: "Shopify",
+    ibvision: "IBVision",
+  };
+  function platformLabel(p: string | null) {
+    return PLATFORM_LABELS[p || "wordpress"] || "WordPress";
+  }
+  function siteUrl(site: (typeof siteList)[number]) {
+    if (site.platform === "shopify") return site.shopify_shop_domain || "";
+    if (site.platform === "ibvision") return site.ibvision_base_url || "";
+    return site.wp_base_url || "";
+  }
 
   return (
     <div className="space-y-8">
@@ -40,7 +57,7 @@ export default async function SitesPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Sites</h1>
           <p className="text-muted-foreground mt-1">
-            Beheer je WordPress-koppelingen.
+            Beheer je WordPress-, Shopify- en IBVision-koppelingen.
           </p>
         </div>
         <Link
@@ -93,10 +110,11 @@ export default async function SitesPage() {
               </div>
 
               <p className="mt-3 text-sm text-muted-foreground truncate">
-                {site.wp_base_url}
+                {siteUrl(site)}
               </p>
 
               <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+                <Badge variant="secondary" className="text-xs">{platformLabel(site.platform)}</Badge>
                 <span>Aangemaakt op {formatDate(site.created_at)}</span>
               </div>
             </Link>

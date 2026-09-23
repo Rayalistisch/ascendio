@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { encrypt } from "@/lib/encryption";
+import { normalizeShopDomain } from "@/lib/shopify";
 
 export async function GET() {
   const supabase = await createClient();
@@ -9,7 +10,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("asc_sites")
-    .select("id, name, platform, wp_base_url, wp_username, ibvision_base_url, status, created_at, default_language, tone_of_voice, acf_content_fields, sitemap_url, is_elementor_site, publish_as_draft, content_profile")
+    .select("id, name, platform, wp_base_url, wp_username, ibvision_base_url, shopify_shop_domain, status, created_at, default_language, tone_of_voice, acf_content_fields, sitemap_url, is_elementor_site, publish_as_draft, content_profile")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
     platform = "wordpress",
     wpBaseUrl, wpUsername, wpAppPassword,
     ibvisionBaseUrl, ibvisionApiKey, ibvisionUrlPrefix,
+    shopifyShopDomain, shopifyAccessToken, shopifyBlogId,
   } = body;
 
   if (!name) {
@@ -37,7 +39,17 @@ export async function POST(request: Request) {
 
   let insertData: Record<string, unknown> = { user_id: user.id, name, platform, status: "active" };
 
-  if (platform === "ibvision") {
+  if (platform === "shopify") {
+    if (!shopifyShopDomain || !shopifyAccessToken) {
+      return NextResponse.json({ error: "Shopify winkeldomein en access token zijn verplicht" }, { status: 400 });
+    }
+    insertData = {
+      ...insertData,
+      shopify_shop_domain: normalizeShopDomain(shopifyShopDomain),
+      shopify_access_token_encrypted: encrypt(shopifyAccessToken),
+      shopify_blog_id: shopifyBlogId ? Number(shopifyBlogId) : null,
+    };
+  } else if (platform === "ibvision") {
     if (!ibvisionBaseUrl || !ibvisionApiKey) {
       return NextResponse.json({ error: "IBVision URL en API key zijn verplicht" }, { status: 400 });
     }
@@ -62,7 +74,7 @@ export async function POST(request: Request) {
   const { data, error } = await supabase
     .from("asc_sites")
     .insert(insertData)
-    .select("id, name, platform, wp_base_url, wp_username, ibvision_base_url, status, created_at")
+    .select("id, name, platform, wp_base_url, wp_username, ibvision_base_url, shopify_shop_domain, status, created_at")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -76,7 +88,7 @@ export async function PATCH(request: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { id, name, toneOfVoice, acfContentFields, sitemapUrl, isElementorSite, publishAsDraft, wpBaseUrl, wpUsername, wpAppPassword } = body;
+  const { id, name, toneOfVoice, acfContentFields, sitemapUrl, isElementorSite, publishAsDraft, wpBaseUrl, wpUsername, wpAppPassword, shopifyShopDomain, shopifyAccessToken, shopifyBlogId } = body;
   if (!id) return NextResponse.json({ error: "Missing site id" }, { status: 400 });
 
   if (toneOfVoice !== undefined && toneOfVoice !== null && typeof toneOfVoice !== "object") {
@@ -104,6 +116,17 @@ export async function PATCH(request: Request) {
     updates.wp_app_password_encrypted = encrypt(wpAppPassword.trim());
   }
 
+  // Shopify-verbinding bijwerken. Token alleen overschrijven bij een niet-lege waarde.
+  if (typeof shopifyShopDomain === "string" && shopifyShopDomain.trim()) {
+    updates.shopify_shop_domain = normalizeShopDomain(shopifyShopDomain.trim());
+  }
+  if (typeof shopifyAccessToken === "string" && shopifyAccessToken.trim()) {
+    updates.shopify_access_token_encrypted = encrypt(shopifyAccessToken.trim());
+  }
+  if (shopifyBlogId !== undefined) {
+    updates.shopify_blog_id = shopifyBlogId ? Number(shopifyBlogId) : null;
+  }
+
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Geen wijzigingen opgegeven" }, { status: 400 });
   }
@@ -113,7 +136,7 @@ export async function PATCH(request: Request) {
     .update(updates)
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("id, name, wp_base_url, wp_username, status, created_at, default_language, tone_of_voice, acf_content_fields, sitemap_url, is_elementor_site, publish_as_draft, content_profile")
+    .select("id, name, platform, wp_base_url, wp_username, shopify_shop_domain, status, created_at, default_language, tone_of_voice, acf_content_fields, sitemap_url, is_elementor_site, publish_as_draft, content_profile")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

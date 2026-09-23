@@ -9,7 +9,7 @@ const INPUT_CLASS = "flex h-9 w-full rounded-md border border-input bg-backgroun
 export default function NewSitePage() {
   const router = useRouter();
 
-  const [platform, setPlatform] = useState<"wordpress" | "ibvision">("wordpress");
+  const [platform, setPlatform] = useState<"wordpress" | "ibvision" | "shopify">("wordpress");
   const [name, setName] = useState("");
 
   // WordPress fields
@@ -22,6 +22,10 @@ export default function NewSitePage() {
   const [ibvisionApiKey, setIbvisionApiKey] = useState("");
   const [ibvisionUrlPrefix, setIbvisionUrlPrefix] = useState("/");
 
+  // Shopify fields
+  const [shopifyShopDomain, setShopifyShopDomain] = useState("");
+  const [shopifyAccessToken, setShopifyAccessToken] = useState("");
+
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
@@ -33,10 +37,14 @@ export default function NewSitePage() {
 
   const canTest = platform === "wordpress"
     ? !!(wpBaseUrl && wpUsername && wpAppPassword)
+    : platform === "shopify"
+    ? !!(shopifyShopDomain && shopifyAccessToken)
     : !!(ibvisionBaseUrl && ibvisionApiKey);
 
   const canSave = platform === "wordpress"
     ? !!(name && wpBaseUrl && wpUsername && wpAppPassword)
+    : platform === "shopify"
+    ? !!(name && shopifyShopDomain && shopifyAccessToken)
     : !!(name && ibvisionBaseUrl && ibvisionApiKey);
 
   async function handleTestConnection() {
@@ -55,6 +63,19 @@ export default function NewSitePage() {
         setTestResult({
           success: data.success,
           message: data.success ? "IBVision verbinding geslaagd" : (data.error || "Verbinding mislukt. Controleer URL en API key."),
+        });
+      } else if (platform === "shopify") {
+        const res = await fetch("/api/sites/test-connection", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ platform: "shopify", shopifyShopDomain, shopifyAccessToken }),
+        });
+        const data = await res.json();
+        setTestResult({
+          success: data.success,
+          message: data.success
+            ? `Verbinding geslaagd${data.displayName ? ` — ${data.displayName}` : ""}`
+            : (data.error || "Verbinding mislukt. Controleer winkeldomein en access token."),
         });
       } else {
         const res = await fetch("/api/sites/test-connection", {
@@ -94,6 +115,8 @@ export default function NewSitePage() {
         body: JSON.stringify(
           platform === "ibvision"
             ? { name, platform, ibvisionBaseUrl, ibvisionApiKey, ibvisionUrlPrefix }
+            : platform === "shopify"
+            ? { name, platform, shopifyShopDomain, shopifyAccessToken }
             : { name, platform, wpBaseUrl, wpUsername, wpAppPassword }
         ),
       });
@@ -146,6 +169,17 @@ export default function NewSitePage() {
               }`}
             >
               WordPress
+            </button>
+            <button
+              type="button"
+              onClick={() => { setPlatform("shopify"); setTestResult(null); }}
+              className={`flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                platform === "shopify"
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-input bg-background hover:bg-accent"
+              }`}
+            >
+              Shopify
             </button>
             <button
               type="button"
@@ -278,6 +312,51 @@ export default function NewSitePage() {
               />
               <p className="text-xs text-muted-foreground">
                 Gegenereerde pagina&apos;s krijgen dit pad als prefix, bijv. <code>/seo/artikel-titel</code>.
+              </p>
+            </div>
+          </>
+        )}
+
+        {/* Shopify velden */}
+        {platform === "shopify" && (
+          <>
+            <div className="space-y-2">
+              <label htmlFor="shopifyShopDomain" className="text-sm font-medium leading-none">
+                Winkeldomein
+              </label>
+              <input
+                id="shopifyShopDomain"
+                type="text"
+                value={shopifyShopDomain}
+                onChange={(e) => setShopifyShopDomain(e.target.value)}
+                placeholder="mijnwinkel.myshopify.com"
+                required
+                className={INPUT_CLASS}
+              />
+              <p className="text-xs text-muted-foreground">
+                Je permanente <code>.myshopify.com</code>-domein. Te vinden in Shopify onder
+                Instellingen &rarr; Domeinen.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="shopifyAccessToken" className="text-sm font-medium leading-none">
+                Admin API access token
+              </label>
+              <input
+                id="shopifyAccessToken"
+                type="password"
+                value={shopifyAccessToken}
+                onChange={(e) => setShopifyAccessToken(e.target.value)}
+                placeholder="shpat_..."
+                required
+                className={INPUT_CLASS}
+              />
+              <p className="text-xs text-muted-foreground">
+                Maak in Shopify een custom app aan via Instellingen &rarr; Apps en
+                verkoopkanalen &rarr; Apps ontwikkelen. Geef die het recht{" "}
+                <code>write_content</code>, installeer de app en kopieer het Admin API
+                access token.
               </p>
             </div>
           </>

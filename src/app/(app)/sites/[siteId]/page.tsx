@@ -22,8 +22,10 @@ interface ToneOfVoice {
 interface SiteInfo {
   id: string;
   name: string;
+  platform?: string;
   wp_base_url: string;
   wp_username: string;
+  shopify_shop_domain?: string | null;
   status: string;
   default_language: string;
   tone_of_voice: ToneOfVoice | null;
@@ -89,6 +91,14 @@ export default function SiteDetailPage() {
   const [testingWp, setTestingWp] = useState(false);
   const [wpTestResult, setWpTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
+  // Shopify-verbinding
+  const [shopifyShopDomain, setShopifyShopDomain] = useState("");
+  const [shopifyAccessToken, setShopifyAccessToken] = useState("");
+  const [savingShopify, setSavingShopify] = useState(false);
+  const [shopifySaved, setShopifySaved] = useState(false);
+  const [testingShopify, setTestingShopify] = useState(false);
+  const [shopifyTestResult, setShopifyTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
   // Cache & synchronisatie
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -127,6 +137,7 @@ export default function SiteDetailPage() {
         setIsElementorSite(found?.is_elementor_site ?? false);
         setWpBaseUrl(found?.wp_base_url ?? "");
         setWpUsername(found?.wp_username ?? "");
+        setShopifyShopDomain(found?.shopify_shop_domain ?? "");
         setPublishAsDraft(found?.publish_as_draft ?? false);
         if (found?.content_profile?.format) {
           setProfileFormat(found.content_profile.format);
@@ -340,6 +351,56 @@ export default function SiteDetailPage() {
     }
   }
 
+  async function testShopifyConnection() {
+    setTestingShopify(true);
+    setShopifyTestResult(null);
+    try {
+      const res = await fetch("/api/sites/test-connection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform: "shopify", shopifyShopDomain, shopifyAccessToken }),
+      });
+      const data = await res.json();
+      setShopifyTestResult(
+        data.success
+          ? { ok: true, message: `Verbinding gelukt ✓${data.displayName ? ` — ${data.displayName}` : ""}` }
+          : { ok: false, message: data.error || "Verbinding mislukt" }
+      );
+    } catch {
+      setShopifyTestResult({ ok: false, message: "Kon de verbinding niet testen" });
+    } finally {
+      setTestingShopify(false);
+    }
+  }
+
+  async function saveShopifyConnection() {
+    setSavingShopify(true);
+    setShopifySaved(false);
+    try {
+      const res = await fetch("/api/sites", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: siteId,
+          shopifyShopDomain,
+          // Alleen meesturen als ingevuld — leeg = huidig token behouden.
+          ...(shopifyAccessToken.trim() ? { shopifyAccessToken } : {}),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        if (data.site) setSite(data.site);
+        setShopifyAccessToken("");
+        setShopifySaved(true);
+        setTimeout(() => setShopifySaved(false), 3000);
+      } else {
+        window.alert(data.error || "Opslaan mislukt");
+      }
+    } finally {
+      setSavingShopify(false);
+    }
+  }
+
   const [deleting, setDeleting] = useState(false);
 
   async function deleteSite() {
@@ -488,6 +549,9 @@ export default function SiteDetailPage() {
   }
 
   const defaultTemplate = templates.find((t) => t.is_default);
+  const platform = site.platform || "wordpress";
+  const isWordPress = platform === "wordpress";
+  const isShopify = platform === "shopify";
 
   return (
     <div className="space-y-6">
@@ -508,8 +572,10 @@ export default function SiteDetailPage() {
         <h2 className="font-semibold">Site informatie</h2>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
-            <span className="text-muted-foreground">WordPress URL:</span>
-            <p className="font-mono">{site.wp_base_url}</p>
+            <span className="text-muted-foreground">
+              {isShopify ? "Shopify winkel:" : "WordPress URL:"}
+            </span>
+            <p className="font-mono">{isShopify ? site.shopify_shop_domain : site.wp_base_url}</p>
           </div>
           <div>
             <span className="text-muted-foreground">Taal:</span>
@@ -519,6 +585,7 @@ export default function SiteDetailPage() {
       </div>
 
       {/* WordPress-verbinding */}
+      {isWordPress && (
       <div className="rounded-xl border bg-card p-4 space-y-3">
         <h2 className="font-semibold">WordPress-verbinding</h2>
         <p className="text-sm text-muted-foreground">
@@ -572,8 +639,62 @@ export default function SiteDetailPage() {
           </Button>
         </div>
       </div>
+      )}
+
+      {/* Shopify-verbinding */}
+      {isShopify && (
+      <div className="rounded-xl border bg-card p-4 space-y-3">
+        <h2 className="font-semibold">Shopify-verbinding</h2>
+        <p className="text-sm text-muted-foreground">
+          Werk het winkeldomein of access token bij als de app opnieuw is aangemaakt of het token
+          is vernieuwd. Historie en instellingen blijven behouden.
+        </p>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Winkeldomein</Label>
+          <Input
+            value={shopifyShopDomain}
+            onChange={(e) => setShopifyShopDomain(e.target.value)}
+            placeholder="mijnwinkel.myshopify.com"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Admin API access token</Label>
+          <Input
+            type="password"
+            value={shopifyAccessToken}
+            onChange={(e) => setShopifyAccessToken(e.target.value)}
+            placeholder="Laat leeg om het huidige token te behouden"
+            autoComplete="new-password"
+          />
+          <p className="text-xs text-muted-foreground">
+            Aan te maken in Shopify onder Instellingen → Apps en verkoopkanalen → Apps ontwikkelen
+            (recht <code>write_content</code>).
+          </p>
+        </div>
+        {shopifyTestResult && (
+          <p className={`text-xs ${shopifyTestResult.ok ? "text-green-600" : "text-destructive"}`}>
+            {shopifyTestResult.message}
+          </p>
+        )}
+        <div className="flex items-center gap-2">
+          <Button onClick={saveShopifyConnection} disabled={savingShopify} size="sm">
+            {savingShopify ? "Opslaan..." : shopifySaved ? "Opgeslagen ✓" : "Verbinding opslaan"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={testShopifyConnection}
+            disabled={testingShopify || !shopifyAccessToken.trim()}
+            title={!shopifyAccessToken.trim() ? "Vul een access token in om te testen" : undefined}
+          >
+            {testingShopify ? "Testen..." : "Test verbinding"}
+          </Button>
+        </div>
+      </div>
+      )}
 
       {/* Cache & synchronisatie */}
+      {isWordPress && (
       <div className="rounded-xl border bg-card p-4 space-y-3">
         <h2 className="font-semibold">Cache &amp; synchronisatie</h2>
         <p className="text-sm text-muted-foreground">
@@ -600,8 +721,10 @@ export default function SiteDetailPage() {
           Na het legen: bouw de link-graaf opnieuw op via Optimaliseren → Link-graaf.
         </p>
       </div>
+      )}
 
       {/* Content-formaat */}
+      {isWordPress && (
       <div className="rounded-xl border bg-card p-4 space-y-3">
         <div>
           <h2 className="font-semibold">Content-formaat</h2>
@@ -633,6 +756,7 @@ export default function SiteDetailPage() {
           block-editor is gemaakt.
         </p>
       </div>
+      )}
 
       {/* Default template selector */}
       <div className="rounded-xl border bg-card p-4 space-y-3">
@@ -713,6 +837,7 @@ export default function SiteDetailPage() {
       </div>
 
       {/* ACF content velden */}
+      {isWordPress && (
       <div className="rounded-xl border bg-card p-4 space-y-3">
         <div>
           <h2 className="font-semibold">ACF content velden</h2>
@@ -735,8 +860,10 @@ export default function SiteDetailPage() {
           {acfSaved && <span className="text-sm text-green-600">Opgeslagen!</span>}
         </div>
       </div>
+      )}
 
       {/* Sitemap URL */}
+      {isWordPress && (
       <div className="rounded-xl border bg-card p-4 space-y-3">
         <div>
           <h2 className="font-semibold">Sitemap URL</h2>
@@ -760,8 +887,10 @@ export default function SiteDetailPage() {
           {sitemapSaved && <span className="text-sm text-green-600">Opgeslagen!</span>}
         </div>
       </div>
+      )}
 
       {/* Elementor */}
+      {isWordPress && (
       <div className="rounded-xl border bg-card p-4 space-y-3">
         <div>
           <h2 className="font-semibold">Elementor</h2>
@@ -784,15 +913,15 @@ export default function SiteDetailPage() {
           {elementorSaved && <span className="text-sm text-green-600">Opgeslagen!</span>}
         </div>
       </div>
+      )}
 
       {/* Concept-modus */}
       <div className="rounded-xl border bg-card p-4 space-y-3">
         <div>
           <h2 className="font-semibold">Concept-modus</h2>
           <p className="text-sm text-muted-foreground">
-            Zet dit aan om content eerst als <strong>concept</strong> in WordPress te plaatsen (nog
-            niet live). Je bekijkt de pagina bij Runs en publiceert hem daar met één klik zodra hij
-            goed is.
+            Zet dit aan om content eerst als <strong>concept</strong> te plaatsen (nog niet live).
+            Je bekijkt de pagina bij Runs en publiceert hem daar met één klik zodra hij goed is.
           </p>
         </div>
         <div className="flex items-center gap-3">

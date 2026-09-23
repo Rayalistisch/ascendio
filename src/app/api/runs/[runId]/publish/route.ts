@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/encryption";
 import { updatePost } from "@/lib/wordpress";
+import { publishArticle as publishShopifyArticle, publishPage as publishShopifyPage } from "@/lib/shopify";
 
 // POST /api/runs/[runId]/publish — publiceer een concept-run alsnog live
 export async function POST(
@@ -21,7 +22,7 @@ export async function POST(
     .maybeSingle();
   if (!run) return NextResponse.json({ error: "Run niet gevonden" }, { status: 404 });
   if (!run.wp_post_id) {
-    return NextResponse.json({ error: "Deze run heeft geen WordPress-post" }, { status: 400 });
+    return NextResponse.json({ error: "Deze run heeft geen gepubliceerd item" }, { status: 400 });
   }
   if (run.status !== "draft") {
     return NextResponse.json({ error: "Deze run is geen concept" }, { status: 400 });
@@ -29,37 +30,68 @@ export async function POST(
 
   const { data: site } = await supabase
     .from("asc_sites")
-    .select("wp_base_url, wp_username, wp_app_password_encrypted")
+    .select("platform, wp_base_url, wp_username, wp_app_password_encrypted, shopify_shop_domain, shopify_access_token_encrypted, shopify_blog_id")
     .eq("id", run.site_id)
     .eq("user_id", user.id)
     .maybeSingle();
-  if (!site?.wp_app_password_encrypted) {
-    return NextResponse.json({ error: "WordPress-gegevens ontbreken" }, { status: 400 });
+  if (!site) {
+    return NextResponse.json({ error: "Site niet gevonden" }, { status: 404 });
   }
 
-  const creds = {
-    baseUrl: site.wp_base_url,
-    username: site.wp_username,
-    appPassword: decrypt(site.wp_app_password_encrypted),
-  };
-  const wpPostId = Number(run.wp_post_id);
+  const platform = site.platform || "wordpress";
+  let url = run.wp_post_url;
 
-  // We weten niet zeker of het een post of pagina is — probeer posts, val terug op pages.
-  let published: { id: number; url: string } | null = null;
-  try {
-    published = await updatePost(creds, wpPostId, { status: "publish" }, { collection: "posts" });
-  } catch {
-    try {
-      published = await updatePost(creds, wpPostId, { status: "publish" }, { collection: "pages" });
-    } catch (err) {
-      return NextResponse.json(
-        { error: err instanceof Error ? err.message : "Publiceren mislukt" },
-        { status: 502 }
-      );
+  if (platform === "shopify") {
+    if (!site.shopify_access_token_encrypted) {
+      return NextResponse.json({ error: "Shopify-gegevens ontbreken" }, { status: 400 });
     }
-  }
+    const shopifyCreds = {
+      shopDomain: site.shopify_shop_domain!,
+      accessToken: decrypt(site.shopify_access_token_encrypted),
+      blogId: site.shopify_blog_id ?? null,
+    };
+    const itemId = Number(run.wp_post_id);
+    // We weten niet zeker of het een artikel of pagina is — probeer artikel, val terug op pagina.
+    try {
+      await publishShopifyArticle(shopifyCreds, itemId);
+    } catch {
+      try {
+        await publishShopifyPage(shopifyCreds, itemId);
+      } catch (err) {
+        return NextResponse.json(
+          { error: err instanceof Error ? err.message : "Publiceren mislukt" },
+          { status: 502 }
+        );
+      }
+    }
+  } else {
+    if (!site.wp_app_password_encrypted) {
+      return NextResponse.json({ error: "WordPress-gegevens ontbreken" }, { status: 400 });
+    }
+    const creds = {
+      baseUrl: site.wp_base_url,
+      username: site.wp_username,
+      appPassword: decrypt(site.wp_app_password_encrypted),
+    };
+    const wpPostId = Number(run.wp_post_id);
 
-  const url = published?.url || run.wp_post_url;
+    // We weten niet zeker of het een post of pagina is — probeer posts, val terug op pages.
+    let published: { id: number; url: string } | null = null;
+    try {
+      published = await updatePost(creds, wpPostId, { status: "publish" }, { collection: "posts" });
+    } catch {
+      try {
+        published = await updatePost(creds, wpPostId, { status: "publish" }, { collection: "pages" });
+      } catch (err) {
+        return NextResponse.json(
+          { error: err instanceof Error ? err.message : "Publiceren mislukt" },
+          { status: 502 }
+        );
+      }
+    }
+
+    url = published?.url || run.wp_post_url;
+  }
 
   await supabase
     .from("asc_runs")
@@ -71,7 +103,7 @@ export async function POST(
     .from("asc_wp_posts")
     .update({ status: "publish", last_synced_at: new Date().toISOString() })
     .eq("site_id", run.site_id)
-    .eq("wp_post_id", wpPostId);
+    .eq("wp_post_id", Number(run.wp_post_id));
 
   if (run.cluster_topic_id) {
     await supabase

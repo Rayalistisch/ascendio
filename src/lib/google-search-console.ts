@@ -32,9 +32,14 @@ function getGoogleClientSecret(): string {
 }
 
 function getAppUrl(): string {
-  return process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  // OAuth redirect_uri moet stabiel zijn en exact matchen met de geregistreerde
+  // redirect-URL in de Google Cloud Console. VERCEL_URL wisselt per deploy, dus
+  // die pakken we alleen als laatste redmiddel — bij voorkeur het vaste domein.
+  return (
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+  );
 }
 
 export function getSearchConsoleRedirectUri(): string {

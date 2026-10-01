@@ -125,7 +125,7 @@ export async function PATCH(request: Request) {
   if (!access.allowed) return NextResponse.json({ error: "Upgrade naar Pro om clusters te gebruiken" }, { status: 403 });
 
   const body = await request.json();
-  const { id, title, description, targetKeywords, sortOrder, status } = body;
+  const { id, title, description, targetKeywords, sortOrder, status, ibvisionUrl } = body;
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
   const updates: Record<string, unknown> = {};
@@ -134,6 +134,7 @@ export async function PATCH(request: Request) {
   if (targetKeywords !== undefined) updates.target_keywords = targetKeywords;
   if (sortOrder !== undefined) updates.sort_order = sortOrder;
   if (status !== undefined) updates.status = status;
+  if (ibvisionUrl !== undefined) updates.ibvision_url = ibvisionUrl;
 
   const { data, error } = await supabase
     .from("asc_cluster_topics")

@@ -89,6 +89,7 @@ interface ClusterTopic {
   wp_post_url: string | null;
   internal_post_id: string | null;
   latest_run: LatestRun | null;
+  ibvision_url: string | null;
 }
 
 interface Suggestion {
@@ -249,6 +250,7 @@ export default function ClustersPage() {
   const [editTopicTitle, setEditTopicTitle] = useState("");
   const [editTopicDescription, setEditTopicDescription] = useState("");
   const [editTopicKeywords, setEditTopicKeywords] = useState<string[]>([]);
+  const [editTopicIbvisionUrl, setEditTopicIbvisionUrl] = useState("");
   const [savingTopic, setSavingTopic] = useState(false);
 
   // Content type for new cluster
@@ -795,6 +797,7 @@ export default function ClustersPage() {
     setEditTopicTitle(topic.title);
     setEditTopicDescription(topic.description ?? "");
     setEditTopicKeywords(topic.target_keywords ?? []);
+    setEditTopicIbvisionUrl(topic.ibvision_url ?? "");
   }
 
   async function saveTopic(topicId: string, clusterId: string) {
@@ -808,6 +811,7 @@ export default function ClustersPage() {
           title: editTopicTitle,
           description: editTopicDescription || null,
           targetKeywords: editTopicKeywords,
+          ibvisionUrl: editTopicIbvisionUrl.trim() || null,
         }),
       });
       if (res.ok) {
@@ -1723,6 +1727,19 @@ export default function ClustersPage() {
                                       onChange={setEditTopicKeywords}
                                     />
                                   </div>
+                                  {activeSitePlatform === "ibvision" && (
+                                    <div className="space-y-1.5">
+                                      <Label className="text-xs">Eigen URL (IBVision)</Label>
+                                      <Input
+                                        value={editTopicIbvisionUrl}
+                                        onChange={(e) => setEditTopicIbvisionUrl(e.target.value)}
+                                        placeholder="/diensten/seo-specialist"
+                                      />
+                                      <p className="text-[11px] text-muted-foreground">
+                                        Leeg laten = automatisch pad (prefix + titel). Vul een exact pad in om dat te overschrijven.
+                                      </p>
+                                    </div>
+                                  )}
                                   <Button
                                     size="sm"
                                     onClick={() => saveTopic(topic.id, cluster.id)}

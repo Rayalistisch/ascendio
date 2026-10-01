@@ -68,6 +68,11 @@ const STYLE_REFERENCE_MAX_CHARS = 900;
 const STYLE_REFERENCE_MIN_CHARS = 120;
 const UNIQUENESS_REFERENCE_MAX_ITEMS = 18;
 const UNIQUENESS_REFERENCE_MIN_CHARS = 220;
+// Grounding: semantisch relevante bestaande posts die inhoudelijk meegaan in de
+// prompt, zodat nieuwe content in lijn blijft met wat de site al zegt.
+const GROUNDING_REFERENCE_MAX_ITEMS = 5;
+const GROUNDING_REFERENCE_MAX_CHARS = 1400;
+const GROUNDING_REFERENCE_MIN_CHARS = 120;
 const MIN_TIME_FOR_DUPLICATE_GUARD_MS = 25000;
 const DUPLICATE_GUARD_ENABLED =
   (process.env.CONTENT_DUPLICATE_GUARD || "true").toLowerCase() !== "false";
@@ -423,6 +428,7 @@ export async function POST(request: Request) {
     // 2.5. Load recent published content as writing style references + uniqueness references
     let styleReferences: { title: string; textSample: string }[] = [];
     let uniquenessReferences: SimilarityCandidate[] = [];
+    let groundingReferences: { title: string; textSample: string }[] = [];
     try {
       const { data: recentPosts } = await supabase
         .from("asc_wp_posts")
@@ -514,6 +520,7 @@ export async function POST(request: Request) {
     let forcedTopic = undefined;
     let forcedTitle = undefined;
     let forcedSlug: string | undefined;
+    let forcedIbvisionUrl: string | undefined;
     let clusterIbvisionUrlPrefix: string | null = null;
     let targetKeywords: string[] | undefined;
     const payloadGenerationSettings: GenerationSettings | null = generationSettings
@@ -594,6 +601,8 @@ export async function POST(request: Request) {
         };
 
         if (currentTopic) {
+          // Een handmatig gezet IBVision-pad overschrijft prefix+slug volledig.
+          forcedIbvisionUrl = currentTopic.ibvision_url || undefined;
           // Programmatic topics carry a pattern-resolved title + slug; force
           // both so the page is deterministic and matches the dataset row.
           const isProgrammatic =
@@ -670,6 +679,51 @@ export async function POST(request: Request) {
             "info",
             `${related.length} interne links semantisch geselecteerd via link-graaf`
           );
+
+          // Grounding: haal de inhoud van de meest relevante posts op en voer die
+          // mee als kennisbron, zodat het nieuwe artikel in lijn blijft met wat de
+          // site al zegt (feiten, diensten, positionering, terminologie).
+          const groundingIds = related
+            .map((r) => r.wp_post_id)
+            .filter((id): id is number => id != null)
+            .slice(0, GROUNDING_REFERENCE_MAX_ITEMS);
+          if (groundingIds.length > 0) {
+            const { data: groundingPosts } = await supabase
+              .from("asc_wp_posts")
+              .select("wp_post_id, title, content, excerpt")
+              .eq("site_id", siteId)
+              .eq("user_id", userId)
+              .in("wp_post_id", groundingIds);
+
+            const byId = new Map(
+              (groundingPosts ?? []).map((p) => [p.wp_post_id, p])
+            );
+            // Behoud de relevantievolgorde van `related`.
+            groundingReferences = groundingIds
+              .map((id) => byId.get(id))
+              .filter((p): p is NonNullable<typeof p> => Boolean(p))
+              .map((p) => {
+                const cleaned = stripHtml(String(p.content || p.excerpt || ""));
+                return {
+                  title: String(p.title || ""),
+                  textSample: truncateAtWordBoundary(cleaned, GROUNDING_REFERENCE_MAX_CHARS),
+                };
+              })
+              .filter(
+                (ref) =>
+                  Boolean(ref.title) &&
+                  ref.textSample.length >= GROUNDING_REFERENCE_MIN_CHARS
+              );
+
+            if (groundingReferences.length > 0) {
+              await logStep(
+                supabase,
+                runId,
+                "info",
+                `${groundingReferences.length} relevante bronnen als inhoudelijke grounding geladen`
+              );
+            }
+          }
         }
       }
     } catch (linkErr) {
@@ -690,6 +744,7 @@ export async function POST(request: Request) {
       sourceTitle,
       existingPosts,
       styleReferences,
+      groundingReferences,
       siteBaseUrl: (site.wp_base_url || site.ibvision_base_url || "").replace(/\/+$/, ""),
       structureTemplate,
       clusterContext,
@@ -1151,7 +1206,11 @@ export async function POST(request: Request) {
         htmlContent,
         language,
         slug,
+        customUrlPath: forcedIbvisionUrl,
       });
+      if (forcedIbvisionUrl) {
+        await logStep(supabase, runId, "info", `Eigen IBVision-URL gebruikt: ${forcedIbvisionUrl}`);
+      }
       await logStep(supabase, runId, "info", "Gepubliceerd via IBVision", {
         docid: ibResult.docid,
         testUrl: ibResult.testUrl,

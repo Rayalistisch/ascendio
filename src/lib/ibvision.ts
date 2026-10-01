@@ -21,6 +21,28 @@ export function buildIBVisionUrl(prefix: string, title: string): string {
   return `${normalizedPrefix}/${slug}`;
 }
 
+/**
+ * Normaliseert een handmatig opgegeven URL-pad naar de vorm die de IBVision
+ * API verwacht (een pad met leidende slash, zonder trailing slash). Een
+ * volledige URL (http...) wordt teruggebracht tot het pad-gedeelte, zodat de
+ * pagina altijd relatief op de IBVision-site landt.
+ */
+export function normalizeCustomUrlPath(input: string): string {
+  let path = input.trim();
+  if (!path) return "";
+  // Volledige URL meegegeven? Pak alleen het pad.
+  if (/^https?:\/\//i.test(path)) {
+    try {
+      path = new URL(path).pathname;
+    } catch {
+      // laat path ongewijzigd als parsen mislukt
+    }
+  }
+  path = path.replace(/\/+$/, ""); // trailing slash(es) weg
+  if (!path.startsWith("/")) path = `/${path}`;
+  return path;
+}
+
 export function mapLanguage(lang: string): "NL" | "DE" | "EN" {
   const normalized = lang.toLowerCase();
   if (normalized === "german" || normalized === "de") return "DE";
@@ -49,9 +71,17 @@ export async function publishContent(
     htmlContent: string;
     language: string;
     slug: string;
+    /**
+     * Optioneel volledig eigen URL-pad. Wanneer gezet, overschrijft dit de
+     * automatische prefix+slug-opbouw volledig (bijv. "/diensten/seo").
+     */
+    customUrlPath?: string;
   }
 ): Promise<IBVisionPublishResult> {
-  const urlPath = buildIBVisionUrl(creds.urlPrefix, params.slug || params.title);
+  const trimmedCustom = params.customUrlPath?.trim();
+  const urlPath = trimmedCustom
+    ? normalizeCustomUrlPath(trimmedCustom)
+    : buildIBVisionUrl(creds.urlPrefix, params.slug || params.title);
   const language = mapLanguage(params.language);
 
   // Strip placeholders and prepend title as h1

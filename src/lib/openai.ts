@@ -126,6 +126,12 @@ export interface EnhancedArticleRequest {
   sourceTitle?: string;
   existingPosts?: { slug: string; title: string }[];
   styleReferences?: { title: string; textSample: string }[];
+  /**
+   * Semantisch relevante bestaande site-content, gebruikt als INHOUDELIJKE
+   * grounding: feiten, positionering, diensten en terminologie moeten hiermee
+   * in lijn blijven. Anders dan styleReferences (toon) stuurt dit de substantie.
+   */
+  groundingReferences?: { title: string; textSample: string }[];
   siteBaseUrl?: string;
   targetKeywords?: string[];
   structureTemplate?: { sections: StructureTemplateSection[] };
@@ -752,6 +758,21 @@ export async function generateEnhancedArticle(
     styleInstruction = `\n## SCHRIJFSTIJL REFERENTIE (BELANGRIJK):\nGebruik deze recente site-fragmenten als stijlreferentie voor toon, ritme, woordkeuze en mate van formaliteit.${styleSamples}\nSchrijf nieuw en origineel; kopieer geen zinnen letterlijk.`;
   }
 
+  // Build content grounding instruction from semantically relevant site content.
+  // This keeps new articles aligned with what the website actually says —
+  // facts, services, positioning, terminology — instead of inventing generics.
+  let groundingInstruction = "";
+  if (req.groundingReferences?.length) {
+    const groundingSamples = req.groundingReferences
+      .slice(0, 5)
+      .map((ref, index) => (
+        `\nBron ${index + 1} — ${ref.title}:\n"${ref.textSample}"`
+      ))
+      .join("\n");
+
+    groundingInstruction = `\n## INHOUDELIJKE GROUNDING (ZEER BELANGRIJK):\nDe onderstaande fragmenten komen uit de bestaande content van deze website en gaan over hetzelfde onderwerp. Behandel ze als de waarheid over wat dit bedrijf doet, aanbiedt en beweert.\n- Houd feiten, diensten/producten, positionering, cijfers en vakterminologie consistent met deze bron. Verzin niets dat hiermee in strijd is.\n- Neem dezelfde namen, termen en schrijfwijzen over (bijv. productnamen, afkortingen).\n- Als deze bron een claim NIET bevat, presenteer die dan niet als een specifiek feit over dit bedrijf.\n- Herhaal of parafraseer deze fragmenten niet letterlijk; bouw er inhoudelijk op voort met nieuwe, originele tekst.${groundingSamples}`;
+  }
+
   // Build explicit tone of voice instruction from site settings
   const toneInstruction = buildToneOfVoiceInstruction(req.toneOfVoice);
   const antiAiInstruction = buildAntiAiInstruction(language);
@@ -822,6 +843,7 @@ ${youtubeTarget > 0
 <!-- YOUTUBE:search query to find a relevant tutorial or explainer video -->
 ${internalLinksInstruction}
 ${externalLinksInstruction}
+${groundingInstruction}
 ${styleInstruction}
 ${toneInstruction}
 ${depthInstruction}

@@ -289,8 +289,8 @@ export async function querySearchConsoleRows(params: {
   }));
 }
 
-export function normalizeSiteUrlForSearchConsole(url: string): string {
-  const trimmed = url.trim();
+export function normalizeSiteUrlForSearchConsole(url: string | null | undefined): string {
+  const trimmed = (url ?? "").trim();
   if (!trimmed) return trimmed;
   try {
     const parsed = new URL(trimmed);

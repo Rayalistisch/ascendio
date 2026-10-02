@@ -96,7 +96,7 @@ export async function GET(request: Request) {
 
   const { data: site } = await supabase
     .from("asc_sites")
-    .select("id, wp_base_url")
+    .select("id, wp_base_url, ibvision_base_url, shopify_shop_domain")
     .eq("id", statePayload.siteId)
     .eq("user_id", user.id)
     .single();
@@ -135,7 +135,12 @@ export async function GET(request: Request) {
       );
     }
 
-    const normalizedSiteUrl = normalizeSiteUrlForSearchConsole(site.wp_base_url);
+    // wp_base_url is WP-only; IBVision/Shopify dragen hun eigen basis-URL.
+    const siteBaseUrl =
+      site.wp_base_url ||
+      site.ibvision_base_url ||
+      (site.shopify_shop_domain ? `https://${site.shopify_shop_domain}` : "");
+    const normalizedSiteUrl = normalizeSiteUrlForSearchConsole(siteBaseUrl);
     let siteHost = "";
     try {
       siteHost = new URL(normalizedSiteUrl).hostname.replace(/^www\./i, "");

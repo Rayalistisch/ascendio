@@ -247,6 +247,7 @@ export async function POST(request: Request) {
     templateId,
     contentType,
     generationSettings,
+    draftMode,
   } = body;
 
   if (!runId || !siteId || !userId) {
@@ -1160,6 +1161,59 @@ export async function POST(request: Request) {
       .eq("id", runId)
       .eq("user_id", userId);
 
+    // Concept-modus: de content is volledig klaar. Niet publiceren, maar opslaan
+    // op het topic zodat de gebruiker hem kan nalezen/bewerken en daarna bewust
+    // publiceert. Alleen voor topic-gebaseerde generatie (clusterTopicId aanwezig).
+    if (draftMode && clusterTopicId) {
+      // Credits afschrijven — genereren is gebeurd, net als bij publiceren.
+      const creditAction =
+        imagesCount > 0 ? "blog_post_with_images" : "blog_post_no_images";
+      const creditResult = await deductCredits(supabase, userId, creditAction, runId);
+      if (creditResult.success) {
+        await logStep(supabase, runId, "info", `${CREDIT_COSTS[creditAction]} credits afgeschreven`);
+        for (let i = 0; i < inlineImagesGenerated; i += 1) {
+          const r = await deductCredits(
+            supabase,
+            userId,
+            "inline_image_generation",
+            `${runId}:inline:${i + 1}`
+          );
+          if (!r.success) break;
+        }
+      } else {
+        await logStep(supabase, runId, "warn", "Credits konden niet worden afgeschreven");
+      }
+
+      await supabase
+        .from("asc_cluster_topics")
+        .update({
+          status: "draft",
+          generated_content: htmlContent,
+          generated_title: article.title,
+          generated_meta: article.metaDescription,
+          generated_at: new Date().toISOString(),
+        })
+        .eq("id", clusterTopicId);
+
+      await supabase
+        .from("asc_runs")
+        .update({
+          status: "draft",
+          topic: article.title,
+          finished_at: new Date().toISOString(),
+        })
+        .eq("id", runId)
+        .eq("user_id", userId);
+
+      await logStep(
+        supabase,
+        runId,
+        "info",
+        "Concept gegenereerd — klaar om te bewerken en te publiceren"
+      );
+      return NextResponse.json({ success: true, draft: true, runId });
+    }
+
     // 10. Publish content (IBVision or WordPress)
     const effectiveContentType = contentType || "posts";
     let post: { id: number | string; url: string };
@@ -1453,6 +1507,8 @@ export async function POST(request: Request) {
             templateId,
             contentType: effectiveContentType,
             generationSettings: runGenerationSettings,
+            // Child-artikelen worden als concept gegenereerd (concept-first).
+            draftMode: true,
           });
           await supabase
             .from("asc_cluster_topics")

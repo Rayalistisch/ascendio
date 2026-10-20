@@ -14,6 +14,9 @@ export async function enqueueGenerateJob(params: {
   retryCount?: number;
   contentType?: string;
   generationSettings?: GenerationSettings;
+  // Concept-modus: genereer de content en sla hem op als concept, zonder te
+  // publiceren. De gebruiker bewerkt en publiceert daarna zelf.
+  draftMode?: boolean;
 }): Promise<{ messageId: string }> {
   return publishToQStash("/api/workers/generate-and-publish", params);
 }

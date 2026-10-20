@@ -197,6 +197,8 @@ export async function POST(request: Request) {
         templateId: cluster.template_id || undefined,
         contentType,
         generationSettings: effectiveGenerationSettings,
+        // Concept-first: genereer als concept, publiceren is een losse stap.
+        draftMode: true,
       });
 
       await supabase

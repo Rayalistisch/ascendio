@@ -95,7 +95,18 @@ const navigation = navigationGroups.flatMap((g) => g.items);
 interface SiteSummary {
   id: string;
   name: string;
+  platform?: string | null;
 }
+
+// Menu-items die niet werken voor IBVision-sites (WordPress-/crawl-afhankelijk).
+// Indexering blijft wél zichtbaar (sitemap.asp bestaat).
+const IBVISION_HIDDEN_HREFS = new Set([
+  "/templates",
+  "/scanner",
+  "/schema",
+  "/link-graph",
+  "/refresh",
+]);
 
 interface SubscriptionInfo {
   tier: string;
@@ -161,6 +172,11 @@ export function AppShell({
   const activeSiteName = useMemo(() => {
     if (!activeSiteId) return null;
     return sites.find((site) => site.id === activeSiteId)?.name || null;
+  }, [activeSiteId, sites]);
+
+  const activeSitePlatform = useMemo(() => {
+    if (!activeSiteId) return null;
+    return sites.find((site) => site.id === activeSiteId)?.platform ?? null;
   }, [activeSiteId, sites]);
 
   function buildNavHref(href: string, siteScoped: boolean): string {
@@ -356,7 +372,13 @@ export function AppShell({
         <div className="space-y-5">
           {navigationGroups.map((group) => {
             const visibleItems = group.items.filter(
-              (item) => !item.gatedFeature || tierHasFeature(subscription?.tier, item.gatedFeature)
+              (item) =>
+                (!item.gatedFeature ||
+                  tierHasFeature(subscription?.tier, item.gatedFeature)) &&
+                !(
+                  activeSitePlatform === "ibvision" &&
+                  IBVISION_HIDDEN_HREFS.has(item.href)
+                )
             );
             if (visibleItems.length === 0) return null;
             return (

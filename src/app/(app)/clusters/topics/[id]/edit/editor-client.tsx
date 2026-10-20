@@ -25,6 +25,9 @@ export function TopicEditorClient({
   const [publishing, setPublishing] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Visuele editor (TipTap) kent geen <details>/<summary>/<style> en stript die.
+  // In HTML-modus zie en bewerk je de ruwe HTML, inclusief de FAQ-accordion.
+  const [mode, setMode] = useState<"visual" | "html">("html");
 
   async function save() {
     setSaving(true);
@@ -116,8 +119,58 @@ export function TopicEditorClient({
       </div>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium">Inhoud</label>
-        <TiptapEditor content={content} onChange={setContent} />
+        <div className="flex items-center justify-between gap-4">
+          <label className="text-sm font-medium">Inhoud</label>
+          <div className="inline-flex rounded-md border p-0.5">
+            <button
+              type="button"
+              onClick={() => setMode("visual")}
+              className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                mode === "visual"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Visueel
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("html")}
+              className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                mode === "html"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              HTML
+            </button>
+          </div>
+        </div>
+
+        {mode === "html" ? (
+          <>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              spellCheck={false}
+              className="min-h-[520px] w-full rounded-md border bg-muted/20 p-3 font-mono text-xs leading-relaxed outline-none focus:ring-2 focus:ring-ring"
+            />
+            <p className="text-xs text-muted-foreground">
+              Ruwe HTML — hier staat ook de FAQ-uitklap-module (
+              <code>&lt;details&gt;</code>). Bewerk de accordion in deze modus; de
+              visuele editor verwijdert geavanceerde HTML.
+            </p>
+          </>
+        ) : (
+          <>
+            <TiptapEditor content={content} onChange={setContent} />
+            <p className="text-xs text-amber-600">
+              Let op: de visuele editor ondersteunt geen{" "}
+              <code>&lt;details&gt;</code>/<code>&lt;style&gt;</code> — schakel naar
+              HTML om de accordion te behouden.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

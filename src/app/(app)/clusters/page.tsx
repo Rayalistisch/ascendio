@@ -247,6 +247,7 @@ export default function ClustersPage() {
 
   // Topic editing
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
+  const [publishingTopicId, setPublishingTopicId] = useState<string | null>(null);
   const [editTopicTitle, setEditTopicTitle] = useState("");
   const [editTopicDescription, setEditTopicDescription] = useState("");
   const [editTopicKeywords, setEditTopicKeywords] = useState<string[]>([]);
@@ -367,6 +368,22 @@ export default function ClustersPage() {
     setLogTopicId(null);
     setRunLogs([]);
     await fetchTopics(clusterId);
+  }
+
+  async function publishTopic(topicId: string, clusterId: string) {
+    if (!window.confirm("Dit concept nu publiceren naar de site?")) return;
+    setPublishingTopicId(topicId);
+    try {
+      const res = await fetch(`/api/clusters/topics/${topicId}/publish`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.alert(data.error || "Publiceren mislukt");
+        return;
+      }
+      await fetchTopics(clusterId);
+    } finally {
+      setPublishingTopicId(null);
+    }
   }
 
   async function openRunLogs(topic: ClusterTopic) {
@@ -1624,6 +1641,26 @@ export default function ClustersPage() {
                                       <Pencil className="h-4 w-4" />
                                     )}
                                   </Button>
+                                  {topic.status === "draft" && (
+                                    <>
+                                      <Link
+                                        href={`/clusters/topics/${topic.id}/edit`}
+                                        className="inline-flex h-8 items-center justify-center rounded-md border px-2.5 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                                        title="Concept bewerken"
+                                      >
+                                        Bewerken
+                                      </Link>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => publishTopic(topic.id, cluster.id)}
+                                        disabled={publishingTopicId === topic.id}
+                                        className="text-green-700"
+                                      >
+                                        {publishingTopicId === topic.id ? "Publiceren…" : "Publiceren"}
+                                      </Button>
+                                    </>
+                                  )}
                                   {topic.internal_post_id && (
                                     <Link
                                       href={`/seo-editor/${topic.internal_post_id}`}

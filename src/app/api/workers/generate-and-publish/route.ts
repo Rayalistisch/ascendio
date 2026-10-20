@@ -223,6 +223,50 @@ function injectYouTubeMarkersAfterH2(html: string, markers: string[]): string {
   return withInjections;
 }
 
+/**
+ * Zet de FAQ-sectie (h2 met id "veelgestelde-vragen", gevolgd door
+ * <h3>vraag</h3><antwoord> paren) om naar een uitklap-accordion met
+ * <details>/<summary>. Alleen gebruikt voor IBVision. De h2-kop blijft staan;
+ * elk vraag/antwoord-paar wordt een inklapbaar item. Wordt de FAQ-sectie of een
+ * vraag/antwoord-paar niet herkend, dan blijft de HTML ongewijzigd.
+ */
+function faqToAccordion(html: string): string {
+  const faqH2 = /<h2[^>]*id=["']veelgestelde-vragen["'][^>]*>[\s\S]*?<\/h2>/i;
+  const m = html.match(faqH2);
+  if (!m || m.index === undefined) return html;
+
+  const afterH2 = m.index + m[0].length;
+  const rest = html.slice(afterH2);
+  // FAQ-regio loopt tot de volgende <h2> of het einde van de content.
+  const nextH2 = rest.search(/<h2[\s>]/i);
+  const faqBody = nextH2 === -1 ? rest : rest.slice(0, nextH2);
+  const tail = nextH2 === -1 ? "" : rest.slice(nextH2);
+
+  // Elke vraag is een <h3>…</h3>; het antwoord is alles tot de volgende <h3> of
+  // het einde van de FAQ-regio.
+  const items: { q: string; a: string }[] = [];
+  const re = /<h3[^>]*>([\s\S]*?)<\/h3>([\s\S]*?)(?=<h3[^>]*>|$)/gi;
+  let mm: RegExpExecArray | null;
+  while ((mm = re.exec(faqBody)) !== null) {
+    const q = mm[1].trim();
+    const a = mm[2].trim();
+    if (q) items.push({ q, a });
+  }
+  if (items.length === 0) return html;
+
+  const accordion =
+    `<div class="faq-accordion">` +
+    items
+      .map(
+        (it) =>
+          `<details class="faq-item"><summary class="faq-question">${it.q}</summary><div class="faq-answer">${it.a}</div></details>`
+      )
+      .join("") +
+    `</div>`;
+
+  return html.slice(0, afterH2) + accordion + tail;
+}
+
 export async function POST(request: Request) {
   console.log("[worker] POST ontvangen");
   const rawBody = await request.text();
@@ -1149,6 +1193,11 @@ export async function POST(request: Request) {
         )
         .join("")}</ul></nav>`;
       htmlContent = tocHtml + htmlContent;
+    }
+
+    // 8b. IBVision: maak van de FAQ-sectie een uitklap-accordion (details/summary).
+    if (platform === "ibvision") {
+      htmlContent = faqToAccordion(htmlContent);
     }
 
     // 9. Add schema markup as script tag

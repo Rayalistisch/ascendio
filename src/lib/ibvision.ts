@@ -99,19 +99,50 @@ export async function publishContent(
     },
     body: JSON.stringify({
       url: urlPath,
-      publish: true,
-      language,
       content,
+      language,
+      // IBVision verwacht `publish` als string ("true"/"false"). Een JSON-boolean
+      // laat hun parser de hele payload als leeg zien → "Payload incomplete".
+      publish: "true",
     }),
   });
 
+  const rawBody = await response.text();
+
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`IBVision publish mislukt: ${response.status} ${body}`);
+    throw new Error(`IBVision publish mislukt: ${response.status} ${rawBody}`);
   }
 
-  const data = await response.json();
-  const result = data?.result;
+  // Een lege 200 betekent meestal een afgewezen/ontbrekende API-key of een
+  // uitgeschakelde seocontent-API. Geef dat als duidelijke fout i.p.v. een
+  // cryptische JSON-parsefout ("Unexpected end of JSON input").
+  if (!rawBody.trim()) {
+    throw new Error(
+      "IBVision gaf een leeg antwoord (HTTP 200 zonder body) — controleer de API-key en of de seocontent-API is geactiveerd."
+    );
+  }
+
+  let data: unknown;
+  try {
+    data = JSON.parse(rawBody);
+  } catch {
+    throw new Error(`IBVision gaf een niet-JSON antwoord: ${rawBody.slice(0, 500)}`);
+  }
+
+  const result = (data as {
+    result?: {
+      docid?: unknown;
+      error?: unknown;
+      errormessage?: string;
+      url?: string;
+      test?: string;
+      qs?: string;
+    };
+  })?.result;
+
+  if (result?.error) {
+    throw new Error(`IBVision weigerde de publicatie: ${result.errormessage || JSON.stringify(data)}`);
+  }
 
   if (!result?.docid) {
     throw new Error(`IBVision gaf onverwacht antwoord: ${JSON.stringify(data)}`);

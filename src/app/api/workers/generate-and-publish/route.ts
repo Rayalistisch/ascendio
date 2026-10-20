@@ -254,12 +254,30 @@ function faqToAccordion(html: string): string {
   }
   if (items.length === 0) return html;
 
+  // Zelfstandige, gestylede accordion. Inline-styles geven de basis-look (voor
+  // het geval het <style>-blok gestript wordt); het <style>-blok verzorgt het
+  // open/dicht-teken (+/−) en hover-states, wat met inline-styles niet kan.
+  const style =
+    `<style>` +
+    `.asc-faq details{border:1px solid #e5e7eb;border-radius:10px;margin:0 0 .6rem;background:#fff;overflow:hidden}` +
+    `.asc-faq summary{list-style:none;cursor:pointer;padding:.9rem 1.1rem;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:1rem}` +
+    `.asc-faq summary::-webkit-details-marker{display:none}` +
+    `.asc-faq summary::after{content:"+";font-size:1.4rem;line-height:1;color:#9ca3af;flex:0 0 auto}` +
+    `.asc-faq details[open] summary::after{content:"\\2212"}` +
+    `.asc-faq summary:hover{background:#f9fafb}` +
+    `.asc-faq .asc-faq-answer{padding:0 1.1rem 1rem;color:#374151}` +
+    `</style>`;
+
   const accordion =
-    `<div class="faq-accordion">` +
+    `<div class="asc-faq faq-accordion">` +
+    style +
     items
       .map(
         (it) =>
-          `<details class="faq-item"><summary class="faq-question">${it.q}</summary><div class="faq-answer">${it.a}</div></details>`
+          `<details class="faq-item" style="border:1px solid #e5e7eb;border-radius:10px;margin:0 0 .6rem;background:#fff">` +
+          `<summary class="faq-question" style="cursor:pointer;padding:.9rem 1.1rem;font-weight:600;list-style:none">${it.q}</summary>` +
+          `<div class="asc-faq-answer faq-answer" style="padding:0 1.1rem 1rem">${it.a}</div>` +
+          `</details>`
       )
       .join("") +
     `</div>`;

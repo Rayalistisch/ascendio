@@ -27,7 +27,7 @@ export function TopicEditorClient({
   const [error, setError] = useState<string | null>(null);
   // Visuele editor (TipTap) kent geen <details>/<summary>/<style> en stript die.
   // In HTML-modus zie en bewerk je de ruwe HTML, inclusief de FAQ-accordion.
-  const [mode, setMode] = useState<"visual" | "html">("html");
+  const [mode, setMode] = useState<"visual" | "html" | "preview">("html");
 
   async function save() {
     setSaving(true);
@@ -144,10 +144,35 @@ export function TopicEditorClient({
             >
               HTML
             </button>
+            <button
+              type="button"
+              onClick={() => setMode("preview")}
+              className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                mode === "preview"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Voorbeeld
+            </button>
           </div>
         </div>
 
-        {mode === "html" ? (
+        {mode === "preview" ? (
+          <>
+            <div
+              className="min-h-[520px] w-full rounded-md border p-5"
+              // Gerenderd voorbeeld: toont de accordion (details/summary + style)
+              // zoals hij op de site zou werken. Content is onze eigen gegenereerde
+              // HTML, geen externe invoer.
+              dangerouslySetInnerHTML={{ __html: content }}
+            />
+            <p className="text-xs text-muted-foreground">
+              Zo wordt de content weergegeven — klik op een FAQ-vraag om het
+              uitklappen te testen.
+            </p>
+          </>
+        ) : mode === "html" ? (
           <>
             <textarea
               value={content}

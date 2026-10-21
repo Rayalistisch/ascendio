@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Palette,
   FileText,
+  Newspaper,
   ChevronUp,
   CreditCard,
   LogOut,
@@ -66,6 +67,7 @@ const navigationGroups: { label: string; items: NavItem[] }[] = [
     label: "Creëren",
     items: [
       { name: "Programmatic", href: "/programmatic", icon: Layers, siteScoped: true, gatedFeature: "programmatic" },
+      { name: "Blogs", href: "/blogs", icon: Newspaper, siteScoped: true },
       { name: "Templates", href: "/templates", icon: FileText, siteScoped: true },
       { name: "Merkidentiteit", href: "/brand-identities", icon: Palette, siteScoped: false, gatedFeature: "brand_identity" },
       { name: "SEO Editor", href: "/seo-editor", icon: PenTool, siteScoped: true },
